@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  name      String?
+  companies Company[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Company {
+  id            String          @id @default(uuid())
+  name          String
+  ownerId       String
+  owner         User            @relation(fields: [ownerId], references: [id])
+  employees     Employee[]
+  tasks         Task[]
+  knowledgeBases KnowledgeBase[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model Employee {
+  id        String     @id @default(uuid())
+  name      String
+  role      String     // e.g., "Assistant", "DevOps", "ProductManager"
+  config    String?    // JSON string for specific configuration (prompts, tools)
+  companyId String
+  company   Company    @relation(fields: [companyId], references: [id])
+  parentId  String?
+  manager   Employee?  @relation("Management", fields: [parentId], references: [id])
+  subordinates Employee[] @relation("Management")
+  tasks     Task[]
+  messages  Message[]
+  status    String     @default("idle") // idle, working, etc.
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  content    String
+  role       String   // "user" or "assistant"
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+model Task {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  status      String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, FAILED
+  assignedToId String?
+  assignedTo  Employee? @relation(fields: [assignedToId], references: [id])
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id])
+  logs        String?   // JSON string for execution logs (optional for now)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model KnowledgeBase {
+  id        String   @id @default(uuid())
+  name      String
+  content   String   // Could be a path to a vector store or raw text for MVP
+  isShared  Boolean  @default(true)
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
