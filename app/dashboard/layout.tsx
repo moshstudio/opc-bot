@@ -1,5 +1,7 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { ModelProvider } from "@/components/ModelContext";
+import { NotificationBell } from "@/components/dashboard/NotificationBell";
 
 export default function DashboardLayout({
   children,
@@ -8,15 +10,29 @@ export default function DashboardLayout({
 }) {
   return (
     <SidebarProvider>
-      <AppSidebar />
-      <main className='w-full h-screen flex flex-col'>
-        <div className='flex items-center justify-between p-4 border-b'>
-          <SidebarTrigger />
-          <h1 className='text-xl font-bold'>仪表盘</h1>
-          <div className='w-8'></div> {/* Spacer for symmetry */}
-        </div>
-        <div className='flex-1 overflow-auto'>{children}</div>
-      </main>
+      <ModelProvider>
+        <AppSidebar />
+        <main className='w-full h-screen flex flex-col bg-slate-50/50 dark:bg-slate-950'>
+          {/* Top Bar */}
+          <div className='flex items-center justify-between px-6 py-3 border-b border-slate-200/60 dark:border-slate-800/60 bg-white/70 dark:bg-slate-950/70 backdrop-blur-lg'>
+            <div className='flex items-center gap-3'>
+              <SidebarTrigger />
+              <div className='h-5 w-px bg-slate-200 dark:bg-slate-800' />
+              <h1 className='text-sm font-semibold text-slate-600 dark:text-slate-300 tracking-wide'>
+                一人公司 · 指挥中心
+              </h1>
+            </div>
+            <div className='flex items-center gap-3'>
+              <NotificationBell />
+              <div className='w-2 h-2 rounded-full bg-green-500 animate-pulse' />
+              <span className='text-[11px] text-slate-500 dark:text-slate-400 font-medium'>
+                系统正常
+              </span>
+            </div>
+          </div>
+          <div className='flex-1 overflow-auto'>{children}</div>
+        </main>
+      </ModelProvider>
     </SidebarProvider>
   );
 }

@@ -1,4 +1,5 @@
 import "./globals.css";
+import { Toaster } from "sonner";
 
 export const metadata = {
   title: "一人公司 (OPC-Bot)",
@@ -12,7 +13,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang='zh'>
-      <body className={`antialiased`}>{children}</body>
+      <body className={`antialiased`}>
+        {children}
+        <Toaster />
+      </body>
     </html>
   );
 }

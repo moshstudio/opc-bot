@@ -25,28 +25,48 @@ model Company {
   name          String
   ownerId       String
   owner         User            @relation(fields: [ownerId], references: [id])
-  employees     Employee[]
-  tasks         Task[]
+  employees      Employee[]
+  tasks          Task[]
   knowledgeBases KnowledgeBase[]
+  notifications  Notification[]
+  systemConfigs  SystemConfig[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 }
 
 model Employee {
-  id        String     @id @default(uuid())
-  name      String
-  role      String     // e.g., "Assistant", "DevOps", "ProductManager"
-  config    String?    // JSON string for specific configuration (prompts, tools)
-  companyId String
-  company   Company    @relation(fields: [companyId], references: [id])
-  parentId  String?
-  manager   Employee?  @relation("Management", fields: [parentId], references: [id])
+  id          String     @id @default(uuid())
+  name        String
+  role        String     // e.g., "Assistant", "DevOps", "ProductManager"
+  config      String?    // JSON string for specific configuration (prompts, tools)
+  workflow    String?    // JSON string for the employee's internal workflow definition
+  permissions String?    // JSON string for permissions: { canRead: bool, canWrite: bool, canExecute: bool, ... }
+  companyId   String
+  company     Company    @relation(fields: [companyId], references: [id])
+  parentId    String?
+  manager     Employee?  @relation("Management", fields: [parentId], references: [id])
   subordinates Employee[] @relation("Management")
-  tasks     Task[]
-  messages  Message[]
-  status    String     @default("idle") // idle, working, etc.
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  // Sub-employee links
+  linkedFrom  EmployeeLink[] @relation("LinkSource")
+  linkedTo    EmployeeLink[] @relation("LinkTarget")
+  tasks        Task[]
+  messages     Message[]
+  employeeLogs EmployeeLog[]
+  status      String     @default("idle") // idle, working, etc.
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+// Represents a link from one employee to a sub-employee
+model EmployeeLink {
+  id            String   @id @default(uuid())
+  sourceId      String
+  source        Employee @relation("LinkSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  targetId      String
+  target        Employee @relation("LinkTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  permissions   String?  // JSON: inherited or custom permissions for this link
+  description   String?  // Optional description of the link
+  createdAt     DateTime @default(now())
 }
 
 model Message {
@@ -73,12 +93,72 @@ model Task {
 }
 
 model KnowledgeBase {
+  id          String     @id @default(uuid())
+  name        String
+  description String?
+  icon        String     @default("📚")
+  content     String     @default("") // Legacy field, kept for backward compatibility
+  isShared    Boolean    @default(true)
+  companyId   String
+  company     Company    @relation(fields: [companyId], references: [id])
+  documents   Document[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Document {
+  id              String        @id @default(uuid())
+  name            String
+  content         String
+  type            String        @default("text") // text, url
+  status          String        @default("ready") // ready, processing, error
+  wordCount       Int           @default(0)
+  characterCount  Int           @default(0)
+  metadata        String?       // JSON string for extra data
+  knowledgeBaseId String
+  knowledgeBase   KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+// 员工输出日志 - 记录所有员工的操作和输出
+model EmployeeLog {
+  id          String   @id @default(uuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type        String   // "workflow_execution" | "chat_response" | "task_completion" | "error" | "status_change"
+  title       String   // 简短标题
+  content     String   // 详细内容
+  metadata    String?  // JSON string for extra data (e.g., workflow results, node details)
+  level       String   @default("info") // "info" | "warning" | "error" | "success"
+  isProcessed Boolean  @default(false)  // 是否已被助理处理过
+  createdAt   DateTime @default(now())
+}
+
+// 通知 - 站内通知系统
+model Notification {
+  id          String   @id @default(uuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id])
+  title       String
+  content     String
+  type        String   @default("info") // "info" | "warning" | "error" | "success" | "summary"
+  source      String   @default("system") // "ivy" | "system" | "employee"
+  sourceId    String?  // 关联的员工 ID
+  isRead      Boolean  @default(false)
+  emailSent   Boolean  @default(false) // 是否已发送邮件
+  createdAt   DateTime @default(now())
+}
+
+// 系统配置 - 存储全局配置（如邮箱服务）
+model SystemConfig {
   id        String   @id @default(uuid())
-  name      String
-  content   String   // Could be a path to a vector store or raw text for MVP
-  isShared  Boolean  @default(true)
   companyId String
   company   Company  @relation(fields: [companyId], references: [id])
+  key       String   // 配置键：e.g., "email_smtp", "ivy_schedule", etc.
+  value     String   // JSON string of configuration
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([companyId, key])
 }

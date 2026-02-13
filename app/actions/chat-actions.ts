@@ -1,9 +1,9 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { runAgentAction } from "./agent-actions";
-import { createAgent as createAgent_ } from "@/lib/agents/agent-factory";
+import { getMastraAgent } from "@/lib/mastra/agents";
 import { revalidatePath } from "next/cache";
+import { logChatResponse } from "@/lib/services/employee-log";
 
 export async function getChatHistory(employeeId: string) {
   try {
@@ -20,7 +20,11 @@ export async function getChatHistory(employeeId: string) {
   }
 }
 
-export async function sendMessage(employeeId: string, message: string) {
+export async function sendMessage(
+  employeeId: string,
+  message: string,
+  clientModelConfig?: { modelName?: string; baseUrl?: string; apiKey?: string },
+) {
   try {
     // 1. Get Employee details
     const employee = await db.employee.findUnique({
@@ -40,30 +44,31 @@ export async function sendMessage(employeeId: string, message: string) {
       },
     });
 
-    // 3. Get Conversation History
-    const history = await db.message.findMany({
-      where: { employeeId },
-      orderBy: { createdAt: "desc" }, // Get latest first
-      take: 10, // Limit context to last 10 messages
-    });
-
-    // Reverse to chronological order for the agent
-    const chronologicalHistory = history
-      .reverse()
-      .map((msg: { role: string; content: string }) => ({
-        role: msg.role,
-        content: msg.content,
-      }));
-
     // 4. Call AI Agent
-    // We cast the role to string because the factory expects a string,
-    // and we trust our DB data or default to 'assistant' if unknown.
-    const agent = await createAgent_(
+    // Parse config
+    let config: any = {};
+    if (employee.config) {
+      try {
+        config = JSON.parse(employee.config);
+      } catch (e) {
+        console.error("Failed to parse employee config", e);
+      }
+    }
+
+    const modelName =
+      clientModelConfig?.modelName ||
+      config.modelName ||
+      config.model ||
+      "gpt-4o";
+    const systemPrompt = config.prompt;
+
+    const agent = getMastraAgent(
       employee.role || "assistant",
-      "gpt-4o",
-      chronologicalHistory,
+      modelName,
+      systemPrompt,
     );
-    const aiResponse = await agent.invoke(message);
+    const result = await agent.generate(message);
+    const aiResponse = result.text;
 
     // 5. Save Assistant Message
     await db.message.create({
@@ -73,6 +78,9 @@ export async function sendMessage(employeeId: string, message: string) {
         employeeId,
       },
     });
+
+    // 记录聊天日志
+    await logChatResponse(employeeId, employee.name, message, aiResponse);
 
     revalidatePath("/dashboard");
 
