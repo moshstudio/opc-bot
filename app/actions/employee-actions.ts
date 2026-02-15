@@ -12,10 +12,18 @@ export async function getEmployees(companyId: string) {
       orderBy: { createdAt: "asc" },
       include: {
         linkedFrom: {
-          include: { target: { select: { id: true, name: true, role: true } } },
+          include: {
+            target: {
+              select: { id: true, name: true, role: true, isActive: true },
+            },
+          },
         },
         linkedTo: {
-          include: { source: { select: { id: true, name: true, role: true } } },
+          include: {
+            source: {
+              select: { id: true, name: true, role: true, isActive: true },
+            },
+          },
         },
       },
     });
@@ -72,6 +80,7 @@ export async function updateEmployee(
     config?: any;
     workflow?: any;
     permissions?: any;
+    isActive?: boolean;
   },
 ) {
   try {

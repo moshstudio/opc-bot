@@ -62,7 +62,7 @@ export async function sendMessage(
       "gpt-4o";
     const systemPrompt = config.prompt;
 
-    const agent = getMastraAgent(
+    const agent = await getMastraAgent(
       employee.role || "assistant",
       modelName,
       systemPrompt,

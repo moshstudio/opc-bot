@@ -66,10 +66,20 @@ export interface WorkflowNodeData {
   minute?: number;
 
   // 知识/数据检索 (knowledge_retrieval)
-  queryType?: "logs" | "knowledge_base" | "database";
+  queryType?:
+    | "logs"
+    | "knowledge_base"
+    | "notifications"
+    | "execution_results"
+    | "database";
   queryLimit?: number;
-  queryFilter?: string;
+  queryFilter?: string; // 级别过滤 (info, warning, error, success)
+  queryKeyword?: string; // 关键词
+  queryTimeRange?: "1h" | "24h" | "7d" | "30d" | "all";
+  queryEmployeeId?: string;
+  queryIncludeProcessed?: boolean;
   limit?: number;
+  embeddingModel?: string; // 所选的 Embedding 模型 ID
 
   // LLM 处理节点 (llm / process)
   model?: string;
@@ -77,6 +87,8 @@ export interface WorkflowNodeData {
   outputSchema?: string;
   temperature?: number;
   maxTokens?: number;
+  retryCount?: number; // 重试次数
+  timeout?: number; // 超时时间 (毫秒)
 
   // Agent 节点
   agentType?: string;

@@ -77,16 +77,12 @@ const ROLE_TEMPLATES: Record<
         {
           id: "node-1",
           type: "cron_trigger",
-          position: { x: 100, y: 150 },
+          position: { x: 50, y: 200 },
           data: {
             label: "定时启动",
-            desc: "每日早晨自动触发日志扫描",
             scheduleType: "visual",
             frequency: "daily",
             time: "09:00",
-            daysOfWeek: "1",
-            daysOfMonth: "1",
-            interval: 1,
             cron: "0 0 9 * * *",
             cronExpression: "0 0 9 * * *",
           },
@@ -94,45 +90,79 @@ const ROLE_TEMPLATES: Record<
         {
           id: "node-2",
           type: "knowledge_retrieval",
-          position: { x: 500, y: 150 },
+          position: { x: 350, y: 50 },
           data: {
             label: "检索员工日志",
-            desc: "获取所有员工最近的活动记录",
             queryType: "logs",
-            queryLimit: 50,
+            queryTimeRange: "24h",
+            queryLimit: 20,
           },
         },
         {
           id: "node-3",
+          type: "knowledge_retrieval",
+          position: { x: 350, y: 200 },
+          data: {
+            label: "检索执行结果",
+            queryType: "execution_results",
+            queryTimeRange: "24h",
+            queryLimit: 10,
+          },
+        },
+        {
+          id: "node-4",
+          type: "knowledge_retrieval",
+          position: { x: 350, y: 350 },
+          data: {
+            label: "检索系统通知",
+            queryType: "notifications",
+            queryTimeRange: "24h",
+            queryLimit: 10,
+          },
+        },
+        {
+          id: "node-5",
+          type: "variable_aggregator",
+          position: { x: 650, y: 200 },
+          data: {
+            label: "信息汇总",
+            aggregateStrategy: "concat",
+            aggregateVariables: ["node-2", "node-3", "node-4"],
+          },
+        },
+        {
+          id: "node-6",
           type: "llm",
-          position: { x: 900, y: 150 },
+          position: { x: 950, y: 200 },
           data: {
             label: "AI 分析总结",
-            desc: "识别潜在风险与核心成就",
             prompt:
-              "请分析以下员工日志，提取其中的核心成果、重要警告和错误信息。如果没有异常，请生成一份语气温和的日常工作汇总。输出要求：使用 JSON 格式，包含 hasNotableItems, summary 和 items 列表。",
-            model: "",
+              "你现在是 AI 助理艾薇。请分析以下提供的一人公司运行数据（包含日志、执行结果和通知），提取核心成果、警告和错误。请以温暖、专业的语气生成一份工作概览。输出要求：必须包含 JSON 字段 hasNotableItems, summary, items。",
             outputSchema:
               '{"hasNotableItems": "boolean", "summary": "string", "items": "array"}',
           },
         },
         {
-          id: "node-4",
+          id: "node-7",
           type: "notification",
-          position: { x: 1300, y: 150 },
+          position: { x: 1250, y: 200 },
           data: {
-            label: "推送汇总通知",
-            desc: "向系统和邮件发送摘要报告",
+            label: "发送日报",
             notificationType: "both",
-            subject: "艾薇 · 每日工作摘要",
-            content: "发现以下值得关注的事项：\n{{node-3}}",
+            subject: "艾薇 · 每日工作动态总结",
+            content: "您好，这是过去 24 小时的工作汇总：\n\n{{node-6}}",
           },
         },
       ],
       edges: [
-        { id: "edge-1", source: "node-1", target: "node-2" },
-        { id: "edge-2", source: "node-2", target: "node-3" },
-        { id: "edge-3", source: "node-3", target: "node-4" },
+        { id: "e1-2", source: "node-1", target: "node-2" },
+        { id: "e1-3", source: "node-1", target: "node-3" },
+        { id: "e1-4", source: "node-1", target: "node-4" },
+        { id: "e2-5", source: "node-2", target: "node-5" },
+        { id: "e3-5", source: "node-3", target: "node-5" },
+        { id: "e4-5", source: "node-4", target: "node-5" },
+        { id: "e5-6", source: "node-5", target: "node-6" },
+        { id: "e6-7", source: "node-6", target: "node-7" },
       ],
     },
   },
@@ -533,7 +563,10 @@ export function AddEmployeeDialog({
       open={open}
       onOpenChange={onOpenChange}
     >
-      <DialogContent className='sm:max-w-[500px] p-0 overflow-hidden border-0 shadow-2xl rounded-2xl bg-white dark:bg-slate-950'>
+      <DialogContent
+        className='sm:max-w-[500px] p-0 overflow-hidden border-0 shadow-2xl rounded-2xl bg-white dark:bg-slate-950'
+        closeClassName='text-white hover:bg-white/20 transition-colors'
+      >
         {/* Gradient Header */}
         <div
           className={`relative px-6 pt-6 pb-4 bg-gradient-to-br ${currentTemplate?.color || "from-violet-500 to-purple-600"} transition-all duration-500`}

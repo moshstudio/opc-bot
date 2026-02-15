@@ -1,72 +1,146 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
+import {
+  getAiModels,
+  createAiModel,
+  updateAiModel,
+  deleteAiModel,
+} from "@/app/actions/ai-models";
+import { toast } from "sonner";
 
-export type ModelProviderType = "openai" | "google" | "anthropic" | "custom";
+export type ModelProviderType =
+  | "openai"
+  | "google"
+  | "anthropic"
+  | "transformers"
+  | "custom";
+
+export type ModelCategory = "chat" | "embedding";
 
 export interface Model {
   id: string; // Unique ID
   name: string; // Display Name
   provider: ModelProviderType;
+  category: ModelCategory;
   baseUrl: string;
   apiKey?: string;
   supportsImages: boolean;
+  isActive?: boolean;
 }
 
 interface ModelContextType {
   models: Model[];
-  addModel: (model: Model) => void;
-  removeModel: (id: string) => void;
-  updateModel: (id: string, model: Partial<Model>) => void;
+  addModel: (model: Partial<Model>) => Promise<void>;
+  removeModel: (id: string) => Promise<void>;
+  updateModel: (id: string, model: Partial<Model>) => Promise<void>;
+  activeEmbeddingModel: Model | undefined;
+  isLoading: boolean;
 }
 
 const ModelContext = createContext<ModelContextType | undefined>(undefined);
 
 export function ModelProvider({ children }: { children: React.ReactNode }) {
   const [models, setModels] = useState<Model[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load from localStorage on mount
+  // Load from Database on mount
   useEffect(() => {
-    const stored = localStorage.getItem("opc-models");
-    if (stored) {
+    async function loadModels() {
       try {
-        // eslint-disable-next-line
-        setModels(JSON.parse(stored));
+        const data = await getAiModels();
+        setModels(data as any[]);
       } catch (e) {
-        console.error("Failed to parse models from localStorage", e);
-        setModels([]);
+        console.error("Failed to load models from DB", e);
+        toast.error("加载模型列表失败");
+      } finally {
+        setIsLoading(false);
       }
-    } else {
-      setModels([]);
     }
-    setIsLoaded(true);
+    loadModels();
   }, []);
 
-  // Save to localStorage whenever models change
-  useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem("opc-models", JSON.stringify(models));
+  const addModel = async (modelData: Partial<Model>) => {
+    // Optimistic Update
+    const tempId = crypto.randomUUID();
+    const newModel = {
+      ...modelData,
+      id: tempId,
+      isActive: true,
+      category: modelData.category || "chat",
+    } as Model;
+
+    setModels((prev) => [...prev, newModel]);
+
+    try {
+      const saved = await createAiModel(newModel);
+      setModels((prev) => prev.map((m) => (m.id === tempId ? saved : m)));
+      toast.success("模型已保存");
+    } catch (e) {
+      console.error("Failed to create model", e);
+      setModels((prev) => prev.filter((m) => m.id !== tempId)); // Rollback
+      toast.error("保存模型失败");
     }
-  }, [models, isLoaded]);
-
-  const addModel = (model: Model) => {
-    setModels((prev) => [...prev, model]);
   };
 
-  const removeModel = (id: string) => {
+  const removeModel = async (id: string) => {
+    const originalModels = [...models];
     setModels((prev) => prev.filter((m) => m.id !== id));
+
+    try {
+      await deleteAiModel(id);
+      toast.success("模型已删除");
+    } catch (e) {
+      console.error("Failed to delete model", e);
+      setModels(originalModels); // Rollback
+      toast.error("删除模型失败");
+    }
   };
 
-  const updateModel = (id: string, updates: Partial<Model>) => {
+  const updateModel = async (id: string, updates: Partial<Model>) => {
+    const originalModels = [...models];
     setModels((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, ...updates } : m)),
+      prev.map((m) => {
+        if (m.id === id) {
+          return { ...m, ...updates };
+        }
+        // If updates an active embedding model, deactivate others of same category
+        if (
+          updates.isActive &&
+          updates.category === "embedding" &&
+          m.category === "embedding" &&
+          m.id !== id
+        ) {
+          return { ...m, isActive: false };
+        }
+        return m;
+      }),
     );
+
+    try {
+      await updateAiModel(id, updates);
+      toast.success("模型已更新");
+    } catch (e) {
+      console.error("Failed to update model", e);
+      setModels(originalModels); // Rollback
+      toast.error("更新模型失败");
+    }
   };
+
+  const activeEmbeddingModel = models.find(
+    (m) => m.category === "embedding" && m.isActive,
+  );
 
   return (
     <ModelContext.Provider
-      value={{ models, addModel, removeModel, updateModel }}
+      value={{
+        models,
+        addModel,
+        removeModel,
+        updateModel,
+        activeEmbeddingModel,
+        isLoading,
+      }}
     >
       {children}
     </ModelContext.Provider>

@@ -13,7 +13,7 @@ export async function routeTaskToEmployees(
   try {
     // 1. Fetch available employees
     const employees = await db.employee.findMany({
-      where: { companyId },
+      where: { companyId, isActive: true },
       select: { id: true, name: true, role: true, config: true },
     });
 
@@ -37,7 +37,7 @@ export async function routeTaskToEmployees(
 
     // 3. Router Agent Logic (using Mastra)
     const { getMastraAgent } = await import("@/lib/mastra/agents");
-    const routerAgent = getMastraAgent(
+    const routerAgent = await getMastraAgent(
       "assistant",
       "gpt-4o",
       `

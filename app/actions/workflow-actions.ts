@@ -51,6 +51,7 @@ export async function executeEmployeeWorkflow(
     if (workflowDef) {
       // ===== 走工作流引擎 =====
       const result = await executeWorkflow(workflowDef, input, employeeId, {
+        companyId: employee.companyId,
         model: config.modelName || config.model,
         prompt: config.prompt,
         temperature: config.temperature,
@@ -133,7 +134,7 @@ export async function testExecuteWorkflow(
     // 1. 获取员工信息用于配置
     const employee = await db.employee.findUnique({
       where: { id: employeeId },
-      select: { config: true },
+      select: { config: true, companyId: true },
     });
 
     let config: any = {};
@@ -145,7 +146,7 @@ export async function testExecuteWorkflow(
 
     // 2. 直接调用引擎执行
     return await executeWorkflow(definition, input, employeeId, {
-      companyId: config.companyId,
+      companyId: employee?.companyId || config.companyId,
       model: config.modelName || config.model,
       prompt: config.prompt,
       temperature: config.temperature,

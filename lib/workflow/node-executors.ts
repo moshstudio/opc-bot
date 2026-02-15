@@ -52,18 +52,137 @@ export const cronTriggerExecutor: NodeExecutor = {
 // ===== 知识/数据检索节点 =====
 export const knowledgeRetrievalExecutor: NodeExecutor = {
   async execute(data, context) {
-    const { queryType = "logs", queryLimit, limit = 50 } = data;
+    const {
+      queryType = "logs",
+      queryLimit,
+      limit = 50,
+      queryFilter,
+      queryKeyword,
+      queryTimeRange = "24h",
+      queryEmployeeId,
+      queryIncludeProcessed = false,
+    } = data;
+
     const finalLimit = queryLimit || limit;
+    const companyId = context.companyId;
 
-    if (queryType === "logs") {
-      const { getUnprocessedLogs } =
-        await import("@/lib/services/employee-log");
-      const logs = await getUnprocessedLogs(finalLimit);
-      const companyLogs = context.companyId
-        ? logs.filter((l: any) => l.employee.companyId === context.companyId)
-        : logs;
+    if (!companyId) {
+      throw new Error("缺少上下文公司 ID，无法检索数据");
+    }
 
-      return JSON.stringify(companyLogs);
+    // 1. 构建时间过滤条件
+    let timeFilter = {};
+    if (queryTimeRange !== "all") {
+      const now = new Date();
+      let startTime = new Date(0);
+      switch (queryTimeRange) {
+        case "1h":
+          startTime = new Date(now.getTime() - 60 * 60 * 1000);
+          break;
+        case "24h":
+          startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          break;
+        case "7d":
+          startTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case "30d":
+          startTime = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          break;
+      }
+      timeFilter = { createdAt: { gte: startTime } };
+    }
+
+    // 2. 根据类型执行不同的检索逻辑
+    const { db } = await import("@/lib/db");
+
+    // --- 日志检索 & 执行结果检索 ---
+    if (queryType === "logs" || queryType === "execution_results") {
+      const where: any = {
+        employee: { companyId },
+        ...timeFilter,
+      };
+
+      if (queryType === "execution_results") {
+        where.type = "workflow_execution";
+      }
+
+      if (queryEmployeeId && queryEmployeeId !== "all") {
+        where.employeeId = queryEmployeeId;
+      }
+
+      if (queryFilter && queryFilter !== "all") {
+        where.level = queryFilter;
+      }
+
+      if (queryType === "logs" && !queryIncludeProcessed) {
+        where.isProcessed = false;
+      }
+
+      if (queryKeyword) {
+        where.OR = [
+          { title: { contains: queryKeyword } },
+          { content: { contains: queryKeyword } },
+        ];
+      }
+
+      const logs = await db.employeeLog.findMany({
+        where,
+        include: {
+          employee: {
+            select: { id: true, name: true, role: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: finalLimit,
+      });
+
+      return JSON.stringify(logs);
+    }
+
+    // --- 通知检索 ---
+    if (queryType === "notifications") {
+      const where: any = {
+        companyId,
+        ...timeFilter,
+      };
+
+      if (queryFilter && queryFilter !== "all") {
+        where.type = queryFilter;
+      }
+
+      if (queryKeyword) {
+        where.OR = [
+          { title: { contains: queryKeyword } },
+          { content: { contains: queryKeyword } },
+        ];
+      }
+
+      const notifications = await db.notification.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        take: finalLimit,
+      });
+
+      return JSON.stringify(notifications);
+    }
+
+    // --- 知识库 (RAG) 检索 ---
+    if (queryType === "knowledge_base") {
+      const { rag } = await import("@/lib/mastra/rag");
+      const previousOutput = getLastOutput(context);
+      const query = queryKeyword || previousOutput || context.input;
+
+      if (!query) {
+        return JSON.stringify([]);
+      }
+
+      const results = await rag.retrieve({
+        connection: { indexName: companyId }, // 假设 indexName 与 companyId 关联
+        query: query,
+        topK: finalLimit,
+      });
+
+      return JSON.stringify(results);
     }
 
     return JSON.stringify([]);
@@ -93,8 +212,43 @@ export const processExecutor: NodeExecutor = {
 
     const agent = getMastraAgent("assistant", model, systemPrompt);
 
-    const result = await agent.generate(input);
-    return result.text;
+    const retryCount = data.retryCount || 0;
+    const timeout = data.timeout || 30000;
+
+    let lastError: any;
+
+    for (let attempt = 0; attempt <= retryCount; attempt++) {
+      try {
+        const generatePromise = agent.generate(input);
+
+        // Create a timeout promise that rejects
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`Operation timed out after ${timeout}ms`));
+          }, timeout);
+        });
+
+        const result: any = await Promise.race([
+          generatePromise,
+          timeoutPromise,
+        ]);
+        return result.text;
+      } catch (error: any) {
+        console.warn(
+          `[Workflow] Node execution failed (attempt ${attempt + 1}/${retryCount + 1}):`,
+          error.message,
+        );
+        lastError = error;
+        // Wait a bit before retrying (exponential backoff could be added here)
+        if (attempt < retryCount) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * (attempt + 1)),
+          );
+        }
+      }
+    }
+
+    throw lastError || new Error("Execution failed after retries");
   },
 };
 

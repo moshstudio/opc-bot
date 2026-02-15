@@ -9,7 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,6 +24,12 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   getKnowledgeBase,
@@ -33,9 +38,11 @@ import {
   createDocument,
   updateDocument,
   deleteDocument,
+  testRetrieval,
 } from "@/app/actions/knowledge-actions";
 import { AddDocumentDialog } from "./AddDocumentDialog";
 import { DocumentViewDialog } from "./DocumentViewDialog";
+import { useModelContext } from "@/components/ModelContext";
 import {
   ArrowLeft,
   Plus,
@@ -53,6 +60,7 @@ import {
   BookOpen,
   Settings,
   FileStack,
+  Database,
 } from "lucide-react";
 
 interface KnowledgeDetailProps {
@@ -66,6 +74,7 @@ interface DocumentItem {
   content: string;
   type: string;
   status: string;
+  errorMessage?: string;
   wordCount: number;
   characterCount: number;
   createdAt: Date;
@@ -95,6 +104,12 @@ export function KnowledgeDetail({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
 
+  // Recall Test state
+  const [testQuery, setTestQuery] = useState("");
+  const [testTopK, setTestTopK] = useState(3);
+  const [testResults, setTestResults] = useState<any[]>([]);
+  const [testing, setTesting] = useState(false);
+
   // Settings state
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
@@ -118,6 +133,8 @@ export function KnowledgeDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [knowledgeBaseId]);
 
+  const { activeEmbeddingModel } = useModelContext();
+
   const handleAddDocument = async (data: {
     name: string;
     content: string;
@@ -126,9 +143,10 @@ export function KnowledgeDetail({
     const res = await createDocument({
       ...data,
       knowledgeBaseId,
+      modelConfig: activeEmbeddingModel,
     });
     if (res.success) {
-      toast.success("文档已添加");
+      toast.success("文档已添加，正在后台分片索引...");
       loadKB();
     } else {
       toast.error("添加失败");
@@ -137,13 +155,15 @@ export function KnowledgeDetail({
 
   const handleUpdateDocument = async (
     id: string,
-    data: { name?: string; content?: string }
+    data: { name?: string; content?: string },
   ) => {
-    const res = await updateDocument(id, data);
+    const res = await updateDocument(id, {
+      ...data,
+      modelConfig: activeEmbeddingModel,
+    });
     if (res.success) {
       toast.success("文档已更新");
       loadKB();
-      // Update viewDoc if it's the same document
       if (viewDoc?.id === id && res.doc) {
         setViewDoc(res.doc as DocumentItem);
       }
@@ -161,6 +181,23 @@ export function KnowledgeDetail({
       loadKB();
     } else {
       toast.error("删除失败");
+    }
+  };
+
+  const handleTestRetrieval = async () => {
+    if (!testQuery.trim()) return;
+    setTesting(true);
+    const res = await testRetrieval(
+      knowledgeBaseId,
+      testQuery.trim(),
+      testTopK,
+      activeEmbeddingModel,
+    );
+    setTesting(false);
+    if (res.success) {
+      setTestResults(res.results || []);
+    } else {
+      toast.error("测试检索失败");
     }
   };
 
@@ -195,7 +232,7 @@ export function KnowledgeDetail({
     kb?.documents.filter(
       (d) =>
         d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.content.toLowerCase().includes(searchQuery.toLowerCase())
+        d.content.toLowerCase().includes(searchQuery.toLowerCase()),
     ) || [];
 
   const totalWords = kb?.documents.reduce((s, d) => s + d.wordCount, 0) || 0;
@@ -204,27 +241,31 @@ export function KnowledgeDetail({
 
   if (loading) {
     return (
-      <div className="container mx-auto p-6 max-w-7xl space-y-6">
-        <Skeleton className="h-8 w-32" />
-        <Skeleton className="h-12 w-full max-w-md" />
-        <div className="grid gap-4 md:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
+      <div className='container mx-auto p-6 max-w-7xl space-y-6'>
+        <Skeleton className='h-8 w-32' />
+        <Skeleton className='h-12 w-full max-w-md' />
+        <div className='grid gap-4 md:grid-cols-3'>
+          <Skeleton className='h-24' />
+          <Skeleton className='h-24' />
+          <Skeleton className='h-24' />
         </div>
-        <Skeleton className="h-64" />
+        <Skeleton className='h-64' />
       </div>
     );
   }
 
   if (!kb) {
     return (
-      <div className="container mx-auto p-6 max-w-7xl">
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <AlertTriangle className="w-12 h-12 text-slate-400 mb-4" />
-          <h3 className="text-lg font-semibold">知识库不存在</h3>
-          <Button variant="ghost" onClick={onBack} className="mt-4 gap-2">
-            <ArrowLeft className="w-4 h-4" />
+      <div className='container mx-auto p-6 max-w-7xl'>
+        <div className='flex flex-col items-center justify-center py-16 text-center'>
+          <AlertTriangle className='w-12 h-12 text-slate-400 mb-4' />
+          <h3 className='text-lg font-semibold'>知识库不存在</h3>
+          <Button
+            variant='ghost'
+            onClick={onBack}
+            className='mt-4 gap-2'
+          >
+            <ArrowLeft className='w-4 h-4' />
             返回列表
           </Button>
         </div>
@@ -233,43 +274,49 @@ export function KnowledgeDetail({
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl space-y-6 animate-in fade-in duration-300">
+    <div className='container mx-auto p-6 max-w-7xl space-y-6 animate-in fade-in duration-300'>
       {/* Back + Header */}
-      <div className="flex items-center gap-4">
+      <div className='flex items-center gap-4'>
         <Button
-          variant="ghost"
-          size="sm"
+          variant='ghost'
+          size='sm'
           onClick={onBack}
-          className="gap-1 rounded-xl text-slate-500 hover:text-slate-700"
+          className='gap-1 rounded-xl text-slate-500 hover:text-slate-700'
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className='w-4 h-4' />
           返回
         </Button>
       </div>
 
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-        <div className="flex items-start gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 flex items-center justify-center text-2xl shadow-sm">
+      <div className='flex flex-col md:flex-row md:items-start justify-between gap-4'>
+        <div className='flex items-start gap-4'>
+          <div className='w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 flex items-center justify-center text-2xl shadow-sm'>
             {kb.icon}
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+            <h2 className='text-2xl font-bold text-slate-900 dark:text-slate-100'>
               {kb.name}
             </h2>
             {kb.description && (
-              <p className="text-slate-500 mt-1">{kb.description}</p>
+              <p className='text-slate-500 mt-1'>{kb.description}</p>
             )}
-            <div className="flex items-center gap-3 mt-2">
-              <Badge variant="outline" className="rounded-lg text-xs gap-1">
-                <FileStack className="w-3 h-3" />
+            <div className='flex items-center gap-3 mt-2'>
+              <Badge
+                variant='outline'
+                className='rounded-lg text-xs gap-1'
+              >
+                <FileStack className='w-3 h-3' />
                 {kb.documents.length} 文档
               </Badge>
-              <Badge variant="outline" className="rounded-lg text-xs gap-1">
-                <Hash className="w-3 h-3" />
+              <Badge
+                variant='outline'
+                className='rounded-lg text-xs gap-1'
+              >
+                <Hash className='w-3 h-3' />
                 {totalWords.toLocaleString()} 词
               </Badge>
               {kb.isShared && (
-                <Badge className="rounded-lg text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-0">
+                <Badge className='rounded-lg text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-0'>
                   共享
                 </Badge>
               )}
@@ -278,51 +325,66 @@ export function KnowledgeDetail({
         </div>
       </div>
 
-      {/* Tabs: Documents | Settings */}
-      <Tabs defaultValue="documents" className="space-y-4">
-        <TabsList className="rounded-xl">
-          <TabsTrigger value="documents" className="gap-1.5 rounded-lg">
-            <BookOpen className="w-4 h-4" />
+      <Tabs
+        defaultValue='documents'
+        className='space-y-4'
+      >
+        <TabsList className='rounded-xl'>
+          <TabsTrigger
+            value='documents'
+            className='gap-1.5 rounded-lg'
+          >
+            <BookOpen className='w-4 h-4' />
             文档
           </TabsTrigger>
-          <TabsTrigger value="settings" className="gap-1.5 rounded-lg">
-            <Settings className="w-4 h-4" />
+          <TabsTrigger
+            value='recall'
+            className='gap-1.5 rounded-lg'
+          >
+            <Search className='w-4 h-4' />
+            召回测试
+          </TabsTrigger>
+          <TabsTrigger
+            value='settings'
+            className='gap-1.5 rounded-lg'
+          >
+            <Settings className='w-4 h-4' />
             设置
           </TabsTrigger>
         </TabsList>
 
-        {/* ======== Documents Tab ======== */}
-        <TabsContent value="documents" className="space-y-4">
-          {/* Toolbar */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="relative w-full sm:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+        <TabsContent
+          value='documents'
+          className='space-y-4'
+        >
+          <div className='flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3'>
+            <div className='relative w-full sm:w-80'>
+              <Search className='absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400' />
               <Input
-                placeholder="搜索文档..."
+                placeholder='搜索文档...'
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 rounded-xl"
+                className='pl-9 rounded-xl'
               />
             </div>
             <Button
               onClick={() => setAddDocOpen(true)}
-              className="gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90 shadow-md"
+              className='gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90 shadow-md'
             >
-              <Plus className="w-4 h-4" />
+              <Plus className='w-4 h-4' />
               添加文档
             </Button>
           </div>
 
-          {/* Document List */}
           {filteredDocs.length === 0 ? (
-            <div className="py-16 flex flex-col items-center justify-center text-center border-2 border-dashed rounded-2xl border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-              <div className="w-14 h-14 mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                <FileText className="w-7 h-7 text-slate-400" />
+            <div className='py-16 flex flex-col items-center justify-center text-center border-2 border-dashed rounded-2xl border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50'>
+              <div className='w-14 h-14 mb-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center'>
+                <FileText className='w-7 h-7 text-slate-400' />
               </div>
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-200">
+              <h3 className='text-lg font-semibold text-slate-900 dark:text-slate-200'>
                 {searchQuery ? "没有匹配的文档" : "还没有文档"}
               </h3>
-              <p className="text-slate-500 max-w-sm mt-2 mb-5">
+              <p className='text-slate-500 max-w-sm mt-2 mb-5'>
                 {searchQuery
                   ? "尝试使用其他关键词搜索"
                   : "添加您的第一个文档，开始构建知识库。"}
@@ -330,23 +392,22 @@ export function KnowledgeDetail({
               {!searchQuery && (
                 <Button
                   onClick={() => setAddDocOpen(true)}
-                  className="gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white"
+                  className='gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white'
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className='w-4 h-4' />
                   添加文档
                 </Button>
               )}
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className='space-y-2'>
               {filteredDocs.map((doc) => (
                 <Card
                   key={doc.id}
-                  className="group border-0 shadow-sm hover:shadow-md transition-all bg-white dark:bg-slate-900 rounded-xl cursor-pointer"
+                  className='group border-0 shadow-sm hover:shadow-md transition-all bg-white dark:bg-slate-900 rounded-xl cursor-pointer'
                   onClick={() => setViewDoc(doc)}
                 >
-                  <CardContent className="p-4 flex items-center gap-4">
-                    {/* Icon */}
+                  <CardContent className='p-4 flex items-center gap-4'>
                     <div
                       className={`p-2.5 rounded-xl shrink-0 ${
                         doc.type === "url"
@@ -355,86 +416,97 @@ export function KnowledgeDetail({
                       }`}
                     >
                       {doc.type === "url" ? (
-                        <Globe className="w-5 h-5" />
+                        <Globe className='w-5 h-5' />
                       ) : (
-                        <FileText className="w-5 h-5" />
+                        <FileText className='w-5 h-5' />
                       )}
                     </div>
 
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                    <div className='flex-1 min-w-0'>
+                      <div className='flex items-center gap-2'>
+                        <h4 className='font-semibold text-slate-900 dark:text-slate-100 truncate'>
                           {doc.name}
                         </h4>
-                        <Badge
-                          variant="outline"
-                          className={`rounded-md text-[10px] px-1.5 shrink-0 ${
-                            doc.status === "ready"
-                              ? "text-emerald-600 border-emerald-200 dark:border-emerald-800"
-                              : doc.status === "error"
-                                ? "text-red-600 border-red-200"
-                                : "text-amber-600 border-amber-200"
-                          }`}
-                        >
-                          {doc.status === "ready"
-                            ? "就绪"
-                            : doc.status === "error"
-                              ? "错误"
-                              : "处理中"}
-                        </Badge>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant='outline'
+                                className={`rounded-md text-[10px] px-1.5 shrink-0 ${
+                                  doc.status === "ready"
+                                    ? "text-emerald-600 border-emerald-200 dark:border-emerald-800"
+                                    : doc.status === "error"
+                                      ? "text-red-600 border-red-200"
+                                      : "text-amber-600 border-amber-200"
+                                }`}
+                              >
+                                {doc.status === "ready"
+                                  ? "就绪"
+                                  : doc.status === "error"
+                                    ? "错误"
+                                    : "处理中"}
+                              </Badge>
+                            </TooltipTrigger>
+                            {doc.status === "error" && doc.errorMessage && (
+                              <TooltipContent className='max-w-[400px] text-[11px] leading-normal bg-red-50 text-red-600 border-red-200 dark:bg-red-950/30 dark:border-red-900/50 break-words'>
+                                {doc.errorMessage}
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </TooltipProvider>
                       </div>
-                      <p className="text-xs text-slate-400 mt-1 truncate max-w-lg">
+                      <p className='text-xs text-slate-400 mt-1 truncate max-w-lg'>
                         {doc.content.slice(0, 120)}
                         {doc.content.length > 120 ? "..." : ""}
                       </p>
                     </div>
 
-                    {/* Stats */}
-                    <div className="hidden md:flex items-center gap-4 text-xs text-slate-400 shrink-0">
-                      <span className="flex items-center gap-1">
-                        <Hash className="w-3 h-3" />
+                    <div className='hidden md:flex items-center gap-4 text-xs text-slate-400 shrink-0'>
+                      <span className='flex items-center gap-1'>
+                        <Hash className='w-3 h-3' />
                         {doc.wordCount.toLocaleString()} 词
                       </span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
+                      <span className='flex items-center gap-1'>
+                        <Clock className='w-3 h-3' />
                         {new Date(doc.createdAt).toLocaleDateString("zh-CN")}
                       </span>
                     </div>
 
-                    {/* Actions */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                          variant='ghost'
+                          size='sm'
+                          className='h-8 w-8 p-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity'
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <MoreHorizontal className="w-4 h-4" />
+                          <MoreHorizontal className='w-4 h-4' />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="rounded-xl">
+                      <DropdownMenuContent
+                        align='end'
+                        className='rounded-xl'
+                      >
                         <DropdownMenuItem
                           onClick={(e) => {
                             e.stopPropagation();
                             setViewDoc(doc);
                           }}
-                          className="gap-2 rounded-lg"
+                          className='gap-2 rounded-lg'
                         >
-                          <Eye className="w-4 h-4" />
+                          <Eye className='w-4 h-4' />
                           查看
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
-                          variant="destructive"
+                          variant='destructive'
                           onClick={(e) => {
                             e.stopPropagation();
                             setDeleteDocId(doc.id);
                           }}
-                          className="gap-2 rounded-lg"
+                          className='gap-2 rounded-lg'
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className='w-4 h-4' />
                           删除
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -445,9 +517,8 @@ export function KnowledgeDetail({
             </div>
           )}
 
-          {/* Stats Bar */}
           {kb.documents.length > 0 && (
-            <div className="flex items-center justify-center gap-6 py-3 text-xs text-slate-400">
+            <div className='flex items-center justify-center gap-6 py-3 text-xs text-slate-400'>
               <span>共 {kb.documents.length} 个文档</span>
               <span>{totalWords.toLocaleString()} 词</span>
               <span>{totalChars.toLocaleString()} 字符</span>
@@ -455,40 +526,152 @@ export function KnowledgeDetail({
           )}
         </TabsContent>
 
-        {/* ======== Settings Tab ======== */}
-        <TabsContent value="settings">
-          <Card className="border-0 shadow-sm bg-white dark:bg-slate-900 rounded-2xl">
-            <CardContent className="p-6 space-y-6">
+        <TabsContent
+          value='recall'
+          className='space-y-6'
+        >
+          <Card className='border-0 shadow-sm bg-white dark:bg-slate-900 rounded-2xl overflow-hidden'>
+            <CardContent className='p-6'>
+              <div className='flex flex-col gap-4'>
+                <div>
+                  <h3 className='text-lg font-semibold'>召回测试</h3>
+                  <p className='text-sm text-slate-500 mt-1'>
+                    输入问题以测试知识库的检索效果，查看匹配的段落和得分。
+                  </p>
+                </div>
+
+                <div className='flex gap-2 items-center'>
+                  <div className='relative flex-1'>
+                    <Input
+                      placeholder='输入测试问题...'
+                      value={testQuery}
+                      onChange={(e) => setTestQuery(e.target.value)}
+                      onKeyDown={(e) =>
+                        e.key === "Enter" && handleTestRetrieval()
+                      }
+                      className='rounded-xl border-slate-200 dark:border-slate-800 pr-20'
+                    />
+                    <div className='absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1'>
+                      <span className='text-[10px] text-slate-400'>Top</span>
+                      <select
+                        className='bg-transparent text-xs font-semibold focus:outline-none cursor-pointer'
+                        value={testTopK}
+                        onChange={(e) => setTestTopK(Number(e.target.value))}
+                      >
+                        <option value={3}>3</option>
+                        <option value={5}>5</option>
+                        <option value={10}>10</option>
+                      </select>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={handleTestRetrieval}
+                    disabled={testing || !testQuery.trim()}
+                    className='rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md gap-2 shrink-0 px-6'
+                  >
+                    {testing ? (
+                      <Loader2 className='w-4 h-4 animate-spin' />
+                    ) : (
+                      <Search className='w-4 h-4' />
+                    )}
+                    测试
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className='space-y-4'>
+            <h4 className='text-sm font-medium text-slate-500 flex items-center gap-2'>
+              <Database className='w-4 h-4' />
+              检索引擎：LanceDB (Vector) +{" "}
+              {activeEmbeddingModel?.name || "OpenAI (3-small)"}
+            </h4>
+
+            {testResults.length > 0 ? (
+              <div className='space-y-4'>
+                {testResults.map((result, idx) => (
+                  <Card
+                    key={idx}
+                    className='border-0 shadow-sm bg-white dark:bg-slate-900 rounded-2xl overflow-hidden animate-in slide-in-from-bottom-2 duration-300'
+                    style={{ animationDelay: `${idx * 50}ms` }}
+                  >
+                    <CardContent className='p-5 space-y-3'>
+                      <div className='flex items-center justify-between'>
+                        <div className='flex items-center gap-2'>
+                          <Badge
+                            variant='secondary'
+                            className='rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-0'
+                          >
+                            段落 {idx + 1}
+                            {result.metadata?.chunkIndex !== undefined && (
+                              <span className='ml-1 opacity-60'>
+                                (Chunk {result.metadata.chunkIndex + 1}/
+                                {result.metadata.totalChunks})
+                              </span>
+                            )}
+                          </Badge>
+                          <span className='text-xs font-medium text-emerald-600 dark:text-emerald-400'>
+                            相似度:{" "}
+                            {Math.max(0, (1 - result.score) * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                        <span className='text-xs text-slate-400 truncate max-w-[200px]'>
+                          来自: {result.metadata?.name || "未知"}
+                        </span>
+                      </div>
+                      <div className='text-sm text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800/50'>
+                        {result.content}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              !testing &&
+              testQuery && (
+                <div className='py-12 flex flex-col items-center justify-center text-center opacity-50'>
+                  <Search className='w-10 h-10 mb-3' />
+                  <p className='text-sm'>点击“测试”查看检索结果</p>
+                </div>
+              )
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value='settings'>
+          <Card className='border-0 shadow-sm bg-white dark:bg-slate-900 rounded-2xl'>
+            <CardContent className='p-6 space-y-6'>
               <div>
-                <h3 className="text-lg font-semibold mb-4">基本信息</h3>
-                <div className="space-y-4 max-w-lg">
+                <h3 className='text-lg font-semibold mb-4'>基本信息</h3>
+                <div className='space-y-4 max-w-lg'>
                   <div>
-                    <label className="text-sm font-medium mb-2 block">
+                    <label className='text-sm font-medium mb-2 block'>
                       名称
                     </label>
                     <Input
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      className="rounded-xl"
+                      className='rounded-xl'
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium mb-2 block">
+                    <label className='text-sm font-medium mb-2 block'>
                       描述
                     </label>
                     <Textarea
                       value={editDesc}
                       onChange={(e) => setEditDesc(e.target.value)}
-                      className="rounded-xl min-h-[80px] resize-none"
-                      placeholder="知识库描述..."
+                      className='rounded-xl min-h-[80px] resize-none'
+                      placeholder='知识库描述...'
                     />
                   </div>
-                  <div className="flex items-center justify-between py-2">
+                  <div className='flex items-center justify-between py-2'>
                     <div>
-                      <label className="text-sm font-medium block">
+                      <label className='text-sm font-medium block'>
                         团队共享
                       </label>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <p className='text-xs text-slate-500 mt-0.5'>
                         开启后所有 AI 员工可以访问此知识库
                       </p>
                     </div>
@@ -500,31 +683,31 @@ export function KnowledgeDetail({
                   <Button
                     onClick={handleSaveSettings}
                     disabled={!editName.trim() || saving}
-                    className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90 shadow-md gap-1"
+                    className='rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90 shadow-md gap-1'
                   >
                     {saving ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 className='w-4 h-4 animate-spin' />
                     ) : (
-                      <Save className="w-4 h-4" />
+                      <Save className='w-4 h-4' />
                     )}
                     保存设置
                   </Button>
                 </div>
               </div>
 
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-6">
-                <h3 className="text-lg font-semibold text-red-600 mb-2">
+              <div className='border-t border-slate-200 dark:border-slate-800 pt-6'>
+                <h3 className='text-lg font-semibold text-red-600 mb-2'>
                   危险区域
                 </h3>
-                <p className="text-sm text-slate-500 mb-4">
+                <p className='text-sm text-slate-500 mb-4'>
                   删除知识库后，其中的所有文档将永久丢失，且无法恢复。
                 </p>
                 <Button
-                  variant="destructive"
+                  variant='destructive'
                   onClick={() => setDeleteConfirmOpen(true)}
-                  className="rounded-xl gap-1"
+                  className='rounded-xl gap-1'
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className='w-4 h-4' />
                   删除知识库
                 </Button>
               </div>
@@ -533,7 +716,6 @@ export function KnowledgeDetail({
         </TabsContent>
       </Tabs>
 
-      {/* Dialogs */}
       <AddDocumentDialog
         open={addDocOpen}
         onOpenChange={setAddDocOpen}
@@ -547,12 +729,11 @@ export function KnowledgeDetail({
         onUpdate={handleUpdateDocument}
       />
 
-      {/* Delete Document Confirm */}
       <Dialog
         open={!!deleteDocId}
         onOpenChange={(v) => !v && setDeleteDocId(null)}
       >
-        <DialogContent className="sm:max-w-[400px] rounded-2xl">
+        <DialogContent className='sm:max-w-[400px] rounded-2xl'>
           <DialogHeader>
             <DialogTitle>确认删除文档</DialogTitle>
             <DialogDescription>
@@ -561,16 +742,16 @@ export function KnowledgeDetail({
           </DialogHeader>
           <DialogFooter>
             <Button
-              variant="ghost"
+              variant='ghost'
               onClick={() => setDeleteDocId(null)}
-              className="rounded-xl"
+              className='rounded-xl'
             >
               取消
             </Button>
             <Button
-              variant="destructive"
+              variant='destructive'
               onClick={handleDeleteDocument}
-              className="rounded-xl"
+              className='rounded-xl'
             >
               确认删除
             </Button>
@@ -578,13 +759,13 @@ export function KnowledgeDetail({
         </DialogContent>
       </Dialog>
 
-      {/* Delete KB Confirm */}
-      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent className="sm:max-w-[400px] rounded-2xl">
+      <Dialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+      >
+        <DialogContent className='sm:max-w-[400px] rounded-2xl'>
           <DialogHeader>
-            <DialogTitle className="text-red-600">
-              确认删除知识库
-            </DialogTitle>
+            <DialogTitle className='text-red-600'>确认删除知识库</DialogTitle>
             <DialogDescription>
               删除「{kb.name}」及其 {kb.documents.length}{" "}
               个文档？此操作不可撤销。
@@ -592,16 +773,16 @@ export function KnowledgeDetail({
           </DialogHeader>
           <DialogFooter>
             <Button
-              variant="ghost"
+              variant='ghost'
               onClick={() => setDeleteConfirmOpen(false)}
-              className="rounded-xl"
+              className='rounded-xl'
             >
               取消
             </Button>
             <Button
-              variant="destructive"
+              variant='destructive'
               onClick={handleDeleteKB}
-              className="rounded-xl"
+              className='rounded-xl'
             >
               确认删除
             </Button>

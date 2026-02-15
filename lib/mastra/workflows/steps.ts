@@ -6,10 +6,19 @@ import { z } from "zod";
  */
 export const startStep = createStep({
   id: "start",
-  inputSchema: z.object({ input: z.string().optional().default("") }),
-  outputSchema: z.object({ output: z.string() }),
+  inputSchema: z.object({
+    input: z.string().optional().default(""),
+    companyId: z.string().optional(),
+  }),
+  outputSchema: z.object({
+    output: z.string(),
+    companyId: z.string().optional(),
+  }),
   execute: async ({ inputData }) => {
-    return { output: inputData.input || "" };
+    return {
+      output: inputData.input || "",
+      companyId: inputData.companyId,
+    };
   },
 });
 
@@ -21,11 +30,23 @@ export const retrievalStep = createStep({
   inputSchema: z.object({
     companyId: z.string(),
     limit: z.number().optional().default(50),
+    startTime: z.number().optional(),
   }),
   outputSchema: z.any(),
   execute: async ({ inputData }) => {
-    const { logRetrievalTool } = await import("../tools");
-    return await logRetrievalTool.execute({ input: inputData });
+    const { tools } = await import("../tools");
+    const result = await tools.logRetrieval.execute?.(
+      {
+        input: {
+          companyId: inputData.companyId,
+          limit: inputData.limit ?? 50,
+        },
+      },
+      {},
+    );
+    // Actually, looking at previous code: logRetrievalTool.execute({ input: inputData })
+    // If it's a Mastra tool, the first arg is typically the context.
+    return { ...result, companyId: inputData.companyId };
   },
 });
 
@@ -40,25 +61,56 @@ export const agentStep = createStep({
     prompt: z.string(),
     input: z.any(),
     outputSchema: z.string().optional(),
+    companyId: z.string().optional(),
+    provider: z.string().optional(),
+    modelConfig: z
+      .object({
+        apiKey: z.string().optional(),
+        baseUrl: z.string().optional(),
+      })
+      .optional(),
   }),
   outputSchema: z.any(),
   execute: async ({ inputData }) => {
+    console.log("[Step:agent_process] Executing with input:", inputData);
     const { getMastraAgent } = await import("../agents");
-    const agent = getMastraAgent(inputData.role, inputData.model);
+    // Await the async factory
+    const agent = await getMastraAgent(
+      inputData.role || "assistant",
+      inputData.model,
+      undefined,
+      inputData.modelConfig,
+      inputData.provider,
+    );
+
+    console.log(
+      `[Step:agent_process] Using agent: ${agent?.name || "unknown"}`,
+    );
 
     let finalPrompt = inputData.prompt;
     if (inputData.outputSchema) {
       finalPrompt += `\n\n**必须按以下 JSON 格式输出：**\n${inputData.outputSchema}`;
     }
 
+    console.log("[Step:agent_process] Calling agent.generate...");
     const result = await agent.generate(
       `上下文内容：\n${JSON.stringify(inputData.input)}\n\n指令：${finalPrompt}`,
     );
+    console.log("[Step:agent_process] Agent response received");
 
     try {
-      return { text: result.text, output: JSON.parse(result.text) };
+      const output = JSON.parse(result.text);
+      return {
+        text: result.text,
+        output,
+        companyId: inputData.companyId,
+      };
     } catch {
-      return { text: result.text, output: result.text };
+      return {
+        text: result.text,
+        output: result.text,
+        companyId: inputData.companyId,
+      };
     }
   },
 });
@@ -71,6 +123,7 @@ export const codeStep = createStep({
   inputSchema: z.object({
     code: z.string(),
     input: z.any(),
+    companyId: z.string().optional(),
   }),
   outputSchema: z.any(),
   execute: async ({ inputData }) => {
@@ -85,7 +138,7 @@ export const codeStep = createStep({
       `,
       );
       const result = fn(inputData.input);
-      return { output: result };
+      return { output: result, companyId: inputData.companyId };
     } catch (error: any) {
       throw new Error(`Code execution failed: ${error.message}`);
     }
@@ -102,9 +155,11 @@ export const httpRequestStep = createStep({
     method: z.enum(["GET", "POST", "PUT", "DELETE"]).default("GET"),
     headers: z.record(z.string()).optional(),
     body: z.any().optional(),
+    companyId: z.string().optional(),
   }),
   outputSchema: z.any(),
   execute: async ({ inputData }) => {
+    console.log(`[Step:http_request] ${inputData.method} ${inputData.url}`);
     const response = await fetch(inputData.url, {
       method: inputData.method,
       headers: {
@@ -119,7 +174,7 @@ export const httpRequestStep = createStep({
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${JSON.stringify(data)}`);
     }
-    return { status: response.status, data };
+    return { status: response.status, data, companyId: inputData.companyId };
   },
 });
 
@@ -136,37 +191,43 @@ export const notificationStep = createStep({
   }),
   outputSchema: z.any(),
   execute: async ({ inputData }) => {
-    const { siteNotificationTool, emailNotificationTool } =
-      await import("../tools");
+    const { tools } = await import("../tools");
     const results: any = {};
 
     if (
       inputData.notificationType === "site" ||
       inputData.notificationType === "both"
     ) {
-      results.site = await siteNotificationTool.execute({
-        input: {
-          companyId: inputData.companyId,
-          title: inputData.subject,
-          content: inputData.content,
+      results.site = await tools.siteNotification.execute?.(
+        {
+          input: {
+            companyId: inputData.companyId,
+            title: inputData.subject,
+            content: inputData.content,
+            type: "info",
+          },
         },
-      });
+        {},
+      );
     }
 
     if (
       inputData.notificationType === "email" ||
       inputData.notificationType === "both"
     ) {
-      results.email = await emailNotificationTool.execute({
-        input: {
-          companyId: inputData.companyId,
-          subject: inputData.subject,
-          content: inputData.content,
+      results.email = await tools.emailNotification.execute?.(
+        {
+          input: {
+            companyId: inputData.companyId,
+            subject: inputData.subject,
+            content: inputData.content,
+          },
         },
-      });
+        {},
+      );
     }
 
-    return results;
+    return { ...results, companyId: inputData.companyId };
   },
 });
 

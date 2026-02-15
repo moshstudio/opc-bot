@@ -32,7 +32,10 @@ import {
   WorkflowDefinition,
   WorkflowNode,
   WorkflowEdge,
+  WorkflowExecutionResult,
 } from "@/lib/workflow/types";
+import { TestRunDialog } from "./TestRunDialog";
+import { TestRunDrawer } from "./TestRunDrawer";
 
 const EDGE_COLORS: Record<string, string> = {
   emerald: "#10b981",
@@ -90,6 +93,11 @@ function WorkflowCanvasContent({
   const [showGrid, setShowGrid] = useState(true);
   const [isLocked, setIsLocked] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [testDialogOpen, setTestDialogOpen] = useState(false);
+  const [testResult, setTestResult] = useState<WorkflowExecutionResult | null>(
+    null,
+  );
+  const [testDrawerOpen, setTestDrawerOpen] = useState(false);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -229,63 +237,112 @@ function WorkflowCanvasContent({
     });
   }, [nodes, edges, onSave]);
 
-  const handleRunWorkflow = useCallback(async () => {
-    if (isExecuting) return;
+  const [lastTestInput, setLastTestInput] = useState<string>("");
 
-    setIsExecuting(true);
-    toast.info("正在启动工作流测试...");
+  const executeWorkflowTest = useCallback(
+    async (input: string) => {
+      if (isExecuting) return;
 
-    try {
-      // 1. 重置所有节点状态
-      setNodes((nds) =>
-        nds.map((node) => ({
-          ...node,
-          data: { ...node.data, status: "idle", output: undefined },
-        })),
-      );
+      setIsExecuting(true);
+      setTestDialogOpen(false);
+      setLastTestInput(input);
+      setTestDrawerOpen(true);
+      setTestResult(null);
 
-      // 2. 执行工作流
-      const result = await testExecuteWorkflow(
-        currentEmployeeId,
-        {
-          nodes: nodes as any as WorkflowNode[],
-          edges: edges as any as WorkflowEdge[],
-        },
-        "测试输入", // 这里可以以后改为弹窗让用户输入
-      );
-
-      if (result.success) {
-        toast.success("工作流预览运行成功");
-      } else {
-        toast.error(`工作流运行失败: ${result.error}`);
+      try {
+        toast.info("正在启动工作流测试...");
+      } catch (e) {
+        console.warn("Toast failed", e);
       }
 
-      // 3. 更新节点状态
-      setNodes((nds) =>
-        nds.map((node) => {
-          const nodeResult = result.nodeResults.find(
-            (r) => r.nodeId === node.id,
-          );
-          if (nodeResult) {
-            return {
-              ...node,
-              data: {
-                ...node.data,
-                status: nodeResult.status === "completed" ? "success" : "error",
-                output: nodeResult.output,
-                error: nodeResult.error,
-              },
-            };
-          }
-          return node;
-        }),
-      );
-    } catch (error: any) {
-      toast.error(`执行出错: ${error.message}`);
-    } finally {
-      setIsExecuting(false);
-    }
-  }, [nodes, edges, currentEmployeeId, isExecuting, setNodes]);
+      try {
+        // 1. 重置所有节点状态
+        // 注意：这里使用 functional update 确保状态正确，但后续执行仍需使用当前的 nodes 快照
+        setNodes((nds) =>
+          nds.map((node) => ({
+            ...node,
+            data: {
+              ...node.data,
+              status: "idle",
+              output: undefined,
+              error: undefined,
+            },
+          })),
+        );
+
+        // 2. 执行工作流
+        // 注意：这里的 nodes 是闭包捕获的当前状态，对于执行逻辑是正确的
+        // 深度克隆以确保传递给 Server Action 的是纯粹的 JSON 对象，避免 React Flow 内部属性导致的序列化问题
+        const result = await testExecuteWorkflow(
+          currentEmployeeId,
+          {
+            nodes: JSON.parse(JSON.stringify(nodes)) as any as WorkflowNode[],
+            edges: JSON.parse(JSON.stringify(edges)) as any as WorkflowEdge[],
+          },
+          input,
+        );
+
+        if (!result) {
+          throw new Error("执行引擎未返回结果");
+        }
+
+        setTestResult(result);
+
+        if (result.success) {
+          toast.success("工作流预览运行成功");
+        } else {
+          toast.error(`工作流运行失败: ${result.error || "未知原因"}`);
+        }
+
+        // 3. 更新节点状态
+        setNodes((nds) => {
+          if (!result.nodeResults) return nds;
+
+          return nds.map((node) => {
+            const nodeResult = result.nodeResults.find(
+              (r) => r.nodeId === node.id,
+            );
+            if (nodeResult) {
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  status:
+                    nodeResult.status === "completed"
+                      ? "success"
+                      : nodeResult.status === "failed"
+                        ? "error"
+                        : nodeResult.status === "skipped"
+                          ? "idle"
+                          : "running",
+                  output: nodeResult.output,
+                  error: nodeResult.error,
+                },
+              };
+            }
+            return node;
+          });
+        });
+      } catch (error: any) {
+        console.error("Workflow canvas execution error:", error);
+        toast.error(`执行出错: ${error.message || "未知错误"}`);
+        setTestResult({
+          success: false,
+          finalOutput: "",
+          nodeResults: [],
+          totalDuration: 0,
+          error: error.message || "未知错误",
+        });
+      } finally {
+        setIsExecuting(false);
+      }
+    },
+    [nodes, edges, currentEmployeeId, isExecuting, setNodes],
+  );
+
+  const handleTestClick = () => {
+    setTestDialogOpen(true);
+  };
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
 
@@ -385,7 +442,7 @@ function WorkflowCanvasContent({
           className='flex gap-2'
         >
           <Button
-            onClick={handleRunWorkflow}
+            onClick={handleTestClick}
             disabled={isExecuting}
             className='bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20'
             size='sm'
@@ -432,10 +489,13 @@ function WorkflowCanvasContent({
         <NodeDetailsPanel
           key={selectedNode.id}
           node={selectedNode}
+          nodes={nodes}
+          edges={edges}
           onUpdate={handleUpdateNode}
           onDelete={handleDeleteNode}
           onClose={() => setSelectedNodeId(null)}
           allEmployees={allEmployees}
+          lastTestInput={lastTestInput}
         />
       )}
 
@@ -448,6 +508,20 @@ function WorkflowCanvasContent({
           (e) => e.id !== currentEmployeeId,
         )}
         allEmployees={allEmployees}
+      />
+
+      <TestRunDialog
+        open={testDialogOpen}
+        onOpenChange={setTestDialogOpen}
+        nodes={nodes as any as WorkflowNode[]}
+        onRun={executeWorkflowTest}
+      />
+
+      <TestRunDrawer
+        isOpen={testDrawerOpen}
+        onClose={() => setTestDrawerOpen(false)}
+        result={testResult}
+        isRunning={isExecuting}
       />
     </div>
   );

@@ -176,6 +176,14 @@ export function EmployeeEditorPanel({
               >
                 {employee.role}
               </Badge>
+              {employee.isActive === false && (
+                <Badge
+                  variant='destructive'
+                  className='text-[9px] h-4 px-1.5 font-bold animate-pulse'
+                >
+                  已禁用
+                </Badge>
+              )}
             </h3>
             <p className='text-[10px] text-slate-400'>编辑员工配置与工作流</p>
           </div>

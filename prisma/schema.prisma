@@ -30,8 +30,26 @@ model Company {
   knowledgeBases KnowledgeBase[]
   notifications  Notification[]
   systemConfigs  SystemConfig[]
+  aiModels       AiModel[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
+}
+
+model AiModel {
+  id             String   @id @default(uuid())
+  name           String
+  provider       String   // "openai", "azure", "anthropic", "google", "transformers", "custom"
+  category       String   // "chat", "embedding"
+  baseUrl        String?
+  apiKey         String?
+  supportsImages Boolean  @default(false)
+  isActive       Boolean  @default(true) // visible or usable
+  
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id])
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model Employee {
@@ -53,6 +71,7 @@ model Employee {
   messages     Message[]
   employeeLogs EmployeeLog[]
   status      String     @default("idle") // idle, working, etc.
+  isActive    Boolean    @default(true)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 }
@@ -112,6 +131,7 @@ model Document {
   content         String
   type            String        @default("text") // text, url
   status          String        @default("ready") // ready, processing, error
+  errorMessage    String?       // 记录处理错误信息
   wordCount       Int           @default(0)
   characterCount  Int           @default(0)
   metadata        String?       // JSON string for extra data

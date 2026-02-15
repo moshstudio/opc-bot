@@ -20,6 +20,7 @@ export interface EmployeeOption {
   name: string;
   role: string;
   status: string;
+  isActive?: boolean;
 }
 
 interface BossCommandBarProps {
@@ -63,7 +64,7 @@ export function BossCommandBar({
 
   if (!isExpanded) {
     return (
-      <div className='absolute bottom-6 left-1/2 transform -translate-x-1/2 z-30'>
+      <div className='absolute bottom-46 right-6 z-30'>
         <Button
           onClick={() => setIsExpanded(true)}
           className='rounded-2xl shadow-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white transition-all px-6 py-3 h-auto gap-2 hover:scale-[1.03] active:scale-[0.97]'
@@ -77,7 +78,7 @@ export function BossCommandBar({
   }
 
   return (
-    <div className='absolute bottom-6 left-1/2 transform -translate-x-1/2 w-[640px] max-w-[90vw] z-30 animate-in slide-in-from-bottom-5 fade-in duration-300'>
+    <div className='absolute bottom-6 right-6 w-[560px] max-w-[calc(100vw-48px)] z-30 animate-in slide-in-from-bottom-5 fade-in duration-300 origin-bottom-right'>
       <div className='bg-white/90 dark:bg-slate-950/90 backdrop-blur-xl border border-slate-200/60 dark:border-slate-800/60 shadow-2xl rounded-2xl overflow-hidden'>
         {/* Employee Selector Dropdown */}
         {showEmployeeList && (
@@ -104,11 +105,14 @@ export function BossCommandBar({
                       <button
                         key={emp.id}
                         onClick={() => toggleEmployee(emp.id)}
+                        disabled={emp.isActive === false}
                         className={cn(
                           "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-left",
                           isChecked
                             ? "bg-violet-50 dark:bg-violet-900/20"
                             : "hover:bg-slate-50 dark:hover:bg-slate-900/50",
+                          emp.isActive === false &&
+                            "opacity-60 cursor-not-allowed",
                         )}
                       >
                         <div
@@ -123,12 +127,25 @@ export function BossCommandBar({
                             <Check className='w-2.5 h-2.5 text-white' />
                           )}
                         </div>
-                        <div className='p-1 rounded-md bg-slate-100 dark:bg-slate-800'>
+                        <div
+                          className={cn(
+                            "p-1 rounded-md bg-slate-100 dark:bg-slate-800",
+                            emp.isActive === false && "grayscale opacity-50",
+                          )}
+                        >
                           <User className='w-3 h-3 text-slate-500' />
                         </div>
                         <div className='flex-1 min-w-0'>
-                          <span className='text-xs font-medium text-slate-700 dark:text-slate-300 truncate block'>
+                          <span
+                            className={cn(
+                              "text-xs font-medium truncate block transition-colors",
+                              emp.isActive === false
+                                ? "text-slate-400 italic"
+                                : "text-slate-700 dark:text-slate-300",
+                            )}
+                          >
                             {emp.name}
+                            {emp.isActive === false && " (已禁用)"}
                           </span>
                         </div>
                         <span className='text-[10px] text-slate-400'>

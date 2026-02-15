@@ -30,6 +30,7 @@ export async function syncScheduledWorkflows() {
         workflow: {
           not: null,
         },
+        isActive: true,
       },
     });
 

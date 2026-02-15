@@ -1,5 +1,8 @@
 import { Agent } from "@mastra/core";
-import { openai } from "@ai-sdk/openai";
+import { openai, createOpenAI } from "@ai-sdk/openai";
+import { google, createGoogleGenerativeAI } from "@ai-sdk/google";
+import { anthropic, createAnthropic } from "@ai-sdk/anthropic";
+import { db } from "@/lib/db";
 import { tools } from "../tools";
 
 // Basic role prompts
@@ -19,12 +22,78 @@ export const agents: Record<string, Agent> = {};
 /**
  * 获取或创建 Mastra Agent
  */
-export function getMastraAgent(
+export async function getMastraAgent(
   role: string,
-  modelName: string = "gpt-4o",
+  modelIdOrName: string = "gpt-4o",
   instructions?: string,
+  modelConfig?: { apiKey?: string; baseUrl?: string },
+  provider?: string,
 ) {
-  const model = openai(modelName);
+  let model;
+  let finalModelName = modelIdOrName;
+  let finalApiKey = modelConfig?.apiKey;
+  let finalBaseUrl = modelConfig?.baseUrl;
+  let finalProvider = provider;
+
+  // If explicit config is missing, try to lookup in DB using the ID
+  if (!finalApiKey && !finalBaseUrl) {
+    try {
+      const dbModel = await db.aiModel.findUnique({
+        where: { id: modelIdOrName },
+      });
+      if (dbModel) {
+        finalModelName = dbModel.name; // The actual model slug (e.g. "gpt-4o")
+        finalProvider = dbModel.provider;
+        finalApiKey = dbModel.apiKey || undefined;
+        finalBaseUrl = dbModel.baseUrl || undefined;
+      }
+    } catch (e) {
+      // Ignore lookup errors (might be a direct slug name instead of ID)
+    }
+  }
+
+  // Handle different providers
+  if (finalProvider === "transformers") {
+    // TODO: Implement Transformers.js adapter for AI SDK
+    console.warn(
+      "Transformers provider not yet fully implemented in Agent, falling back to OpenAI compatible check",
+    );
+  }
+
+  if (finalProvider === "google") {
+    console.log("Using Google provider");
+    if (finalApiKey || finalBaseUrl) {
+      const customGoogle = createGoogleGenerativeAI({
+        apiKey: finalApiKey,
+        baseURL: finalBaseUrl,
+      });
+      model = customGoogle(finalModelName);
+    } else {
+      model = google(finalModelName);
+    }
+  } else if (finalProvider === "anthropic") {
+    console.log("Using Anthropic provider");
+    if (finalApiKey || finalBaseUrl) {
+      const customAnthropic = createAnthropic({
+        apiKey: finalApiKey,
+        baseURL: finalBaseUrl,
+      });
+      model = customAnthropic(finalModelName);
+    } else {
+      model = anthropic(finalModelName);
+    }
+  } else if (finalApiKey || finalBaseUrl) {
+    console.log("Using Custom OpenAI provider");
+    const customOpenai = createOpenAI({
+      apiKey: finalApiKey || "dummy-key", // Use dummy key if not provided but config exists
+      baseURL: finalBaseUrl,
+    });
+    model = customOpenai.chat(finalModelName);
+  } else {
+    console.log("Using Default OpenAI provider");
+    // Fallback to default instance (env vars)
+    model = openai.chat(finalModelName);
+  }
 
   return new Agent({
     id: `agent-${role}`,
@@ -36,6 +105,7 @@ export function getMastraAgent(
       get_employee_logs: tools.logRetrieval,
       send_site_notification: tools.siteNotification,
       send_email_notification: tools.emailNotification,
+      search_knowledge: tools.knowledgeSearch,
     },
   });
 }

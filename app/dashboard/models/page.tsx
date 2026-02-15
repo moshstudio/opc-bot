@@ -69,15 +69,31 @@ export default function ModelsPage() {
             <CardHeader className='pb-3'>
               <div className='flex items-start gap-4'>
                 <div className='p-3 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 text-blue-600 dark:text-blue-400 shadow-sm group-hover:shadow-md transition-shadow'>
-                  <Cpu className='h-6 w-6' />
+                  {model.category === "embedding" ? (
+                    <Sparkles className='h-6 w-6' />
+                  ) : (
+                    <Cpu className='h-6 w-6' />
+                  )}
                 </div>
                 <div className='space-y-1'>
-                  <CardTitle className='text-lg font-bold leading-tight'>
-                    {model.name}
-                  </CardTitle>
+                  <div className='flex items-center gap-2'>
+                    <CardTitle className='text-lg font-bold leading-tight'>
+                      {model.name}
+                    </CardTitle>
+                    {model.category === "embedding" && model.isActive && (
+                      <Badge className='bg-blue-500 hover:bg-blue-600 text-white border-0'>
+                        默认
+                      </Badge>
+                    )}
+                  </div>
                   <CardDescription className='flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-slate-500'>
-                    <Sparkles className='w-3 h-3 text-amber-500' />
-                    {model.provider}
+                    <Badge
+                      variant='outline'
+                      className='text-[10px] py-0 h-4 border-slate-200'
+                    >
+                      {model.category === "chat" ? "聊天" : "嵌入"}
+                    </Badge>
+                    <span>{model.provider}</span>
                   </CardDescription>
                 </div>
               </div>
@@ -90,32 +106,44 @@ export default function ModelsPage() {
                   className='truncate'
                   title={model.baseUrl}
                 >
-                  {model.baseUrl}
+                  {model.provider === "transformers"
+                    ? "⚡ Local Model"
+                    : model.baseUrl}
                 </span>
               </div>
 
               <div className='flex items-center justify-between'>
-                <Badge
-                  variant={model.supportsImages ? "default" : "secondary"}
-                  className={`rounded-lg px-2.5 py-0.5 font-medium transition-colors ${
-                    model.supportsImages
-                      ? "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400"
-                  }`}
-                >
-                  {model.supportsImages ? (
-                    <div className='flex items-center gap-1.5'>
-                      <Eye className='h-3.5 w-3.5' />
-                      <span>视觉能力</span>
-                    </div>
-                  ) : (
-                    <div className='flex items-center gap-1.5'>
-                      <EyeOff className='h-3.5 w-3.5' />
-                      <span>仅文本</span>
-                    </div>
-                  )}
-                </Badge>
-                {model.apiKey ? (
+                {model.category === "chat" ? (
+                  <Badge
+                    variant={model.supportsImages ? "default" : "secondary"}
+                    className={`rounded-lg px-2.5 py-0.5 font-medium transition-colors ${
+                      model.supportsImages
+                        ? "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400"
+                    }`}
+                  >
+                    {model.supportsImages ? (
+                      <div className='flex items-center gap-1.5'>
+                        <Eye className='h-3.5 w-3.5' />
+                        <span>视觉能力</span>
+                      </div>
+                    ) : (
+                      <div className='flex items-center gap-1.5'>
+                        <EyeOff className='h-3.5 w-3.5' />
+                        <span>仅文本</span>
+                      </div>
+                    )}
+                  </Badge>
+                ) : (
+                  <Badge className='bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'>
+                    向量模型
+                  </Badge>
+                )}
+                {model.provider === "transformers" ? (
+                  <span className='text-[10px] bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded-full text-green-600 border border-green-100 dark:border-green-800/50'>
+                    LOCAL
+                  </span>
+                ) : model.apiKey ? (
                   <span className='text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-full text-slate-500 border border-slate-200 dark:border-slate-700'>
                     KEY SET
                   </span>

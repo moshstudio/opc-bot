@@ -7,6 +7,7 @@ import { getOrCreateCompany } from "@/app/actions/company-actions";
 import {
   createEmployee,
   getEmployees,
+  updateEmployee,
   deleteEmployee,
 } from "@/app/actions/employee-actions";
 import { executeEmployeeWorkflow } from "@/app/actions/workflow-actions";
@@ -66,6 +67,7 @@ export default function EmployeesPage() {
               config: emp.config,
               workflow: emp.workflow,
               permissions: emp.permissions,
+              isActive: emp.isActive, // Added isActive to mapping
               linkedFrom: emp.linkedFrom,
               linkedTo: emp.linkedTo,
             })),
@@ -199,6 +201,43 @@ export default function EmployeesPage() {
     }
   };
 
+  const handleToggleActive = async (id: string, active: boolean) => {
+    // Optimistic update
+    setEmployees((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, isActive: active } : e)),
+    );
+    if (selectedEmployee?.id === id) {
+      setSelectedEmployee((prev) =>
+        prev ? { ...prev, isActive: active } : null,
+      );
+    }
+
+    const res = await updateEmployee(id, { isActive: active });
+    if (!res.success) {
+      toast.error("更新状态失败");
+      // Rollback
+      const res2 = await getEmployees(companyId!);
+      if (res2.success && res2.employees) {
+        setEmployees(
+          res2.employees.map((emp: any) => ({
+            id: emp.id,
+            name: emp.name,
+            role: emp.role,
+            status: emp.status,
+            config: emp.config,
+            workflow: emp.workflow,
+            permissions: emp.permissions,
+            isActive: emp.isActive,
+            linkedFrom: emp.linkedFrom,
+            linkedTo: emp.linkedTo,
+          })),
+        );
+      }
+    } else {
+      toast.success(active ? "员工已启用" : "员工已禁用");
+    }
+  };
+
   // ----- Boss dispatch (走工作流引擎) -----
   const handleBossDispatch = async (message: string, selectedIds: string[]) => {
     setIsWorking(true);
@@ -305,6 +344,7 @@ export default function EmployeesPage() {
     name: e.name,
     role: e.role,
     status: e.status,
+    isActive: e.isActive,
   }));
 
   // All employees for sub-employee linking
@@ -343,6 +383,7 @@ export default function EmployeesPage() {
             onAdd={() => setAddDialogOpen(true)}
             onDelete={handleDeleteEmployee}
             onDuplicate={handleDuplicateEmployee}
+            onToggleActive={handleToggleActive}
           />
         </div>
 

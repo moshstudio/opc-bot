@@ -1,5 +1,6 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
+import { rag } from "../rag";
 
 /**
  * 日志检索工具
@@ -9,15 +10,14 @@ export const logRetrievalTool = createTool({
   id: "get_employee_logs",
   description: "获取特定公司下未处理的员工工作日志，用于扫描风险和摘要报告。",
   inputSchema: z.object({
-    companyId: z.string().describe("公司 ID"),
-    limit: z.number().optional().default(50).describe("返回的最大日志条数"),
+    input: z.object({
+      companyId: z.string().describe("公司 ID"),
+      limit: z.number().default(50).describe("返回的最大日志条数"),
+    }),
   }),
   outputSchema: z.any(),
-  execute: async ({
-    input,
-  }: {
-    input: { companyId: string; limit: number };
-  }) => {
+  execute: async ({ input }) => {
+    console.log("[Tool:logRetrieval] Executing with input:", input);
     const { getUnprocessedLogs } = await import("@/lib/services/employee-log");
     const logs = await getUnprocessedLogs(input.limit);
     // 过滤公司日志 (假设 getUnprocessedLogs 返回全量，需要在此过滤)
@@ -32,13 +32,14 @@ export const siteNotificationTool = createTool({
   id: "send_site_notification",
   description: "向公司管理层发送站内通知消息。",
   inputSchema: z.object({
-    companyId: z.string().describe("公司 ID"),
-    title: z.string().describe("通知标题"),
-    content: z.string().describe("通知内容 (Markdown 格式)"),
-    type: z
-      .enum(["info", "warning", "error", "success"])
-      .optional()
-      .default("info"),
+    input: z.object({
+      companyId: z.string().describe("公司 ID"),
+      title: z.string().describe("通知标题"),
+      content: z.string().describe("通知内容 (Markdown 格式)"),
+      type: z
+        .enum(["info", "warning", "error", "success"])
+        .describe("通知类型"),
+    }),
   }),
   execute: async ({
     input,
@@ -50,6 +51,7 @@ export const siteNotificationTool = createTool({
       type: "info" | "warning" | "error" | "success";
     };
   }) => {
+    console.log("[Tool:siteNotification] Executing with input:", input);
     const { createNotification } = await import("@/lib/services/notification");
     return await createNotification({
       companyId: input.companyId,
@@ -68,15 +70,18 @@ export const emailNotificationTool = createTool({
   id: "send_email_notification",
   description: "向公司的主要联系人发送电子邮件摘要。前提是公司已配置 SMTP。",
   inputSchema: z.object({
-    companyId: z.string().describe("公司 ID"),
-    subject: z.string().describe("邮件主题"),
-    content: z.string().describe("邮件正文 (HTML/Markdown)"),
+    input: z.object({
+      companyId: z.string().describe("公司 ID"),
+      subject: z.string().describe("邮件主题"),
+      content: z.string().describe("邮件正文 (HTML/Markdown)"),
+    }),
   }),
   execute: async ({
     input,
   }: {
     input: { companyId: string; subject: string; content: string };
   }) => {
+    console.log("[Tool:emailNotification] Executing with input:", input);
     const { sendNotificationEmail, isEmailConfigured } =
       await import("@/lib/services/email");
     const configured = await isEmailConfigured(input.companyId);
@@ -91,8 +96,11 @@ export const emailNotificationTool = createTool({
   },
 });
 
+import { knowledgeSearchTool } from "./knowledge-tools";
+
 export const tools = {
   logRetrieval: logRetrievalTool,
   siteNotification: siteNotificationTool,
   emailNotification: emailNotificationTool,
+  knowledgeSearch: knowledgeSearchTool,
 };

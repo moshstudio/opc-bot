@@ -1,10 +1,11 @@
 import { Mastra } from "@mastra/core";
-import { workflow } from "./workflows";
+import { workflow, parallelWorkflow } from "./workflows";
 import { agents } from "./agents";
 
 export const mastra = new Mastra({
   workflows: {
     workflow,
+    parallelWorkflow,
   },
   agents: agents,
 });

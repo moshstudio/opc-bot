@@ -11,29 +11,62 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { X, Trash2, Save } from "lucide-react";
+import { X, Trash2, Save, Zap, Bot } from "lucide-react";
 import { useModelContext } from "@/components/ModelContext";
 import { toast } from "sonner";
 import { generateCron } from "@/lib/workflow/cron-utils";
 import { CronConfigurator } from "./CronConfigurator";
 import { cn } from "@/lib/utils";
+import { getColorClasses, NODE_THEMES } from "./nodeTypeConfig";
+import { SchemaBuilder } from "./SchemaBuilder";
 
 interface NodeDetailsPanelProps {
   node: Node;
+  nodes: Node[];
+  edges: any[];
   onUpdate: (id: string, data: any) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
   allEmployees: { id: string; name: string; role: string }[];
+  lastTestInput?: string;
 }
 
 export function NodeDetailsPanel({
   node,
+  nodes,
+  edges,
   onUpdate,
   onDelete,
   onClose,
   allEmployees,
+  lastTestInput,
 }: NodeDetailsPanelProps) {
   const { models } = useModelContext();
+
+  // 获取所有上游节点的 ID
+  const getUpstreamNodeIds = (
+    targetId: string,
+    allEdges: any[],
+    visited = new Set<string>(),
+  ): string[] => {
+    const upstreamIds = new Set<string>();
+    const queue = [targetId];
+
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      allEdges.forEach((edge) => {
+        if (edge.target === currentId && !visited.has(edge.source)) {
+          upstreamIds.add(edge.source);
+          visited.add(edge.source);
+          queue.push(edge.source);
+        }
+      });
+    }
+    return Array.from(upstreamIds);
+  };
+
+  const upstreamNodeIds = getUpstreamNodeIds(node.id, edges);
+
   const [formData, setFormData] = useState<any>(() => {
     const data = { ...node.data };
     if (
@@ -120,14 +153,16 @@ export function NodeDetailsPanel({
                   <SelectValue placeholder='选择模型' />
                 </SelectTrigger>
                 <SelectContent>
-                  {models.map((m) => (
-                    <SelectItem
-                      key={m.id}
-                      value={m.id}
-                    >
-                      {m.name} ({m.provider})
-                    </SelectItem>
-                  ))}
+                  {models
+                    .filter((m) => m.category === "chat")
+                    .map((m) => (
+                      <SelectItem
+                        key={m.id}
+                        value={m.id}
+                      >
+                        {m.name} ({m.provider})
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -139,6 +174,41 @@ export function NodeDetailsPanel({
                 placeholder='描述处理逻辑...'
                 className='min-h-[120px]'
               />
+            </div>
+            <div className='pt-2 border-t border-slate-100 dark:border-slate-800 mt-4'>
+              <SchemaBuilder
+                initialSchema={formData.outputSchema || ""}
+                onChange={(schema: any) => handleChange("outputSchema", schema)}
+              />
+            </div>
+            <div className='grid grid-cols-2 gap-4 pt-2 border-t border-slate-100 dark:border-slate-800 mt-4'>
+              <div className='space-y-2'>
+                <Label>最大重试次数</Label>
+                <Input
+                  type='number'
+                  min={0}
+                  max={5}
+                  value={formData.retryCount || 0}
+                  onChange={(e) =>
+                    handleChange("retryCount", parseInt(e.target.value) || 0)
+                  }
+                  className='rounded-xl'
+                />
+              </div>
+              <div className='space-y-2'>
+                <Label>超时 (ms)</Label>
+                <Input
+                  type='number'
+                  min={1000}
+                  step={1000}
+                  value={formData.timeout || 30000}
+                  onChange={(e) =>
+                    handleChange("timeout", parseInt(e.target.value) || 0)
+                  }
+                  className='rounded-xl'
+                  placeholder='30000'
+                />
+              </div>
             </div>
           </>
         );
@@ -315,16 +385,153 @@ export function NodeDetailsPanel({
         );
       case "knowledge_retrieval":
         return (
-          <div className='space-y-2'>
-            <Label>最大检索数量</Label>
-            <Input
-              type='number'
-              value={formData.limit || 50}
-              onChange={(e) => handleChange("limit", parseInt(e.target.value))}
-            />
-            <div className='text-xs text-slate-500'>
-              从知识库/员工日志中获取最近的数据条数。
+          <div className='space-y-4'>
+            <div className='space-y-2'>
+              <Label className='text-xs font-semibold text-slate-500 uppercase'>
+                数据源
+              </Label>
+              <Select
+                value={formData.queryType || "logs"}
+                onValueChange={(v: any) => handleChange("queryType", v)}
+              >
+                <SelectTrigger className='rounded-xl'>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='logs'>员工日志 (Logs)</SelectItem>
+                  <SelectItem value='notifications'>
+                    站内通知 (Notifications)
+                  </SelectItem>
+                  <SelectItem value='execution_results'>
+                    执行结果 (Results)
+                  </SelectItem>
+                  <SelectItem value='knowledge_base'>知识库 (RAG)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            <div className='grid grid-cols-2 gap-3'>
+              <div className='space-y-2'>
+                <Label className='text-xs font-semibold text-slate-500 uppercase'>
+                  时间范围
+                </Label>
+                <Select
+                  value={formData.queryTimeRange || "24h"}
+                  onValueChange={(v: any) => handleChange("queryTimeRange", v)}
+                >
+                  <SelectTrigger className='rounded-xl'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='1h'>最近 1 小时</SelectItem>
+                    <SelectItem value='24h'>最近 24 小时</SelectItem>
+                    <SelectItem value='7d'>最近 7 天</SelectItem>
+                    <SelectItem value='30d'>最近 30 天</SelectItem>
+                    <SelectItem value='all'>全部时间</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className='space-y-2'>
+                <Label className='text-xs font-semibold text-slate-500 uppercase'>
+                  检索限制
+                </Label>
+                <Input
+                  type='number'
+                  value={formData.queryLimit || formData.limit || 50}
+                  onChange={(e) =>
+                    handleChange("queryLimit", parseInt(e.target.value))
+                  }
+                  className='rounded-xl'
+                />
+              </div>
+            </div>
+
+            {formData.queryType !== "knowledge_base" && (
+              <div className='space-y-2'>
+                <Label className='text-xs font-semibold text-slate-500 uppercase'>
+                  关联员工 (可选)
+                </Label>
+                <Select
+                  value={formData.queryEmployeeId || "all"}
+                  onValueChange={(v) => handleChange("queryEmployeeId", v)}
+                >
+                  <SelectTrigger className='rounded-xl'>
+                    <SelectValue placeholder='全部员工' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='all'>全部员工</SelectItem>
+                    {allEmployees.map((emp) => (
+                      <SelectItem
+                        key={emp.id}
+                        value={emp.id}
+                      >
+                        {emp.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {formData.queryType === "knowledge_base" && (
+              <div className='space-y-2'>
+                <Label className='text-xs font-semibold text-slate-500 uppercase tracking-wider'>
+                  Embedding 模型
+                </Label>
+                <Select
+                  value={formData.embeddingModel || ""}
+                  onValueChange={(v) => handleChange("embeddingModel", v)}
+                >
+                  <SelectTrigger className='rounded-xl'>
+                    <SelectValue placeholder='使用默认 Embedding 模型' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models
+                      .filter((m) => m.category === "embedding")
+                      .map((m) => (
+                        <SelectItem
+                          key={m.id}
+                          value={m.id}
+                        >
+                          {m.name} ({m.provider})
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className='space-y-2'>
+              <Label className='text-xs font-semibold text-slate-500 uppercase'>
+                关键词搜索 (可选)
+              </Label>
+              <Input
+                value={formData.queryKeyword || ""}
+                onChange={(e) => handleChange("queryKeyword", e.target.value)}
+                placeholder='在此输入搜索关键词...'
+                className='rounded-xl'
+              />
+            </div>
+
+            {formData.queryType === "logs" && (
+              <div className='flex items-center gap-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800'>
+                <input
+                  type='checkbox'
+                  id='includeProcessed'
+                  checked={formData.queryIncludeProcessed}
+                  onChange={(e) =>
+                    handleChange("queryIncludeProcessed", e.target.checked)
+                  }
+                  className='rounded border-slate-300 text-emerald-600 focus:ring-emerald-500'
+                />
+                <Label
+                  htmlFor='includeProcessed'
+                  className='text-xs text-slate-600 cursor-pointer'
+                >
+                  包含已处理的日志记录
+                </Label>
+              </div>
+            )}
           </div>
         );
       case "start":
@@ -384,14 +591,16 @@ export function NodeDetailsPanel({
                   <SelectValue placeholder='选择模型' />
                 </SelectTrigger>
                 <SelectContent>
-                  {models.map((m) => (
-                    <SelectItem
-                      key={m.id}
-                      value={m.id}
-                    >
-                      {m.name} ({m.provider})
-                    </SelectItem>
-                  ))}
+                  {models
+                    .filter((m) => m.category === "chat")
+                    .map((m) => (
+                      <SelectItem
+                        key={m.id}
+                        value={m.id}
+                      >
+                        {m.name} ({m.provider})
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -498,41 +707,125 @@ export function NodeDetailsPanel({
             </div>
           </>
         );
-      case "variable_aggregator":
+      case "variable_aggregator": {
+        // Only show upstream nodes as they are reachable
+        const availableNodes = nodes.filter((n: Node) =>
+          upstreamNodeIds.includes(n.id),
+        );
+
         return (
           <>
-            <div className='space-y-2'>
-              <Label>聚合变量 (每行一个节点 ID)</Label>
-              <Textarea
-                value={(formData.aggregateVariables || []).join("\n")}
-                onChange={(e) =>
-                  handleChange(
-                    "aggregateVariables",
-                    e.target.value.split("\n").filter(Boolean),
-                  )
-                }
-                placeholder={"node-1\nnode-2"}
-                className='min-h-[80px]'
-              />
+            <div className='space-y-3'>
+              <Label className='text-sm font-semibold'>
+                选择要聚合的变量节点
+              </Label>
+              <div className='space-y-2 max-h-[240px] overflow-y-auto p-1 pr-2'>
+                {availableNodes.length > 0 ? (
+                  availableNodes.map((n: Node) => {
+                    const isSelected = (
+                      formData.aggregateVariables || []
+                    ).includes(n.id);
+                    return (
+                      <div
+                        key={n.id}
+                        onClick={() => {
+                          const currentVars = formData.aggregateVariables || [];
+                          const newVars = isSelected
+                            ? currentVars.filter((v: string) => v !== n.id)
+                            : [...currentVars, n.id];
+                          handleChange("aggregateVariables", newVars);
+                        }}
+                        className={cn(
+                          "group flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer",
+                          isSelected
+                            ? "bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-800"
+                            : "bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 hover:border-violet-200 dark:hover:border-violet-800 hover:bg-slate-50 dark:hover:bg-slate-800/50",
+                        )}
+                      >
+                        <div className='flex items-center gap-3'>
+                          <div
+                            className={cn(
+                              "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
+                              isSelected
+                                ? "bg-violet-500 text-white"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-400 group-hover:text-violet-500",
+                            )}
+                          >
+                            <span className='text-[10px] font-bold uppercase'>
+                              {(n.type || "N").charAt(0)}
+                            </span>
+                          </div>
+                          <div className='flex flex-col'>
+                            <span
+                              className={cn(
+                                "text-sm font-medium",
+                                isSelected
+                                  ? "text-violet-700 dark:text-violet-300"
+                                  : "text-slate-700 dark:text-slate-300",
+                              )}
+                            >
+                              {String(n.data.label || n.type)}
+                            </span>
+                            <span className='text-[10px] text-slate-400 font-mono'>
+                              ID: {n.id.split("-")[0]}...
+                            </span>
+                          </div>
+                        </div>
+                        <div
+                          className={cn(
+                            "w-5 h-5 rounded-full border flex items-center justify-center transition-all",
+                            isSelected
+                              ? "bg-violet-500 border-violet-500 text-white shadow-sm"
+                              : "border-slate-200 dark:border-slate-700",
+                          )}
+                        >
+                          {isSelected && <Save className='w-3 h-3' />}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className='text-center py-8 text-slate-400 text-sm italic'>
+                    没有可用的上游节点
+                  </div>
+                )}
+              </div>
             </div>
-            <div className='space-y-2'>
-              <Label>聚合策略</Label>
+
+            <div className='space-y-2 mt-4'>
+              <Label className='text-sm font-semibold'>聚合策略</Label>
               <Select
                 value={formData.aggregateStrategy || "concat"}
                 onValueChange={(v) => handleChange("aggregateStrategy", v)}
               >
-                <SelectTrigger>
+                <SelectTrigger className='rounded-xl'>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value='concat'>换行拼接</SelectItem>
-                  <SelectItem value='merge'>直接合并</SelectItem>
-                  <SelectItem value='array'>JSON 数组</SelectItem>
+                <SelectContent className='rounded-xl'>
+                  <SelectItem value='concat'>
+                    换行拼接 (推荐用于长文本)
+                  </SelectItem>
+                  <SelectItem value='merge'>紧凑合并 (直接拼接)</SelectItem>
+                  <SelectItem value='array'>
+                    JSON 数组 (用于脚本处理)
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            <div className='p-4 bg-violet-50 dark:bg-violet-900/10 border border-violet-100 dark:border-violet-900/20 rounded-xl mt-4'>
+              <p className='text-[11px] text-violet-700 dark:text-violet-400 leading-relaxed italic'>
+                💡 <strong>提示：</strong>
+                变量聚合器会将所选节点的运行结果按照指定策略合并。当前已选择{" "}
+                <span className='font-bold underline'>
+                  {Number(formData.aggregateVariables?.length || 0)}
+                </span>{" "}
+                个节点。
+              </p>
+            </div>
           </>
         );
+      }
       case "list_operation":
         return (
           <>
@@ -781,110 +1074,222 @@ export function NodeDetailsPanel({
         );
 
       default:
-        return (
-          <div className='text-sm text-slate-500'>该节点类型暂无高级配置。</div>
-        );
+        return null;
     }
   };
 
   return (
-    <div className='absolute right-4 top-4 bottom-4 w-[320px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl flex flex-col z-50 animate-in slide-in-from-right-10 duration-200'>
+    <div className='absolute right-0 top-0 bottom-0 w-80 bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200'>
       {/* Header */}
-      <div className='flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800'>
-        <div className='font-semibold text-slate-800 dark:text-slate-200'>
-          节点设置
+      <div className='p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50'>
+        <div className='flex items-center gap-3'>
+          <div
+            className={cn(
+              "w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm",
+              getColorClasses(
+                NODE_THEMES[node.type || "process"]?.color || "violet",
+              ).topBar,
+            )}
+          >
+            {React.createElement(
+              NODE_THEMES[node.type || "process"]?.icon || Bot,
+              { size: 16 },
+            )}
+          </div>
+          <div className='overflow-hidden'>
+            <h3 className='font-bold text-slate-900 dark:text-slate-100 text-sm truncate'>
+              {String(node.data.label || "节点设置")}
+            </h3>
+            <p className='text-[10px] text-slate-400 font-mono truncate'>
+              {node.id}
+            </p>
+          </div>
         </div>
         <Button
           variant='ghost'
           size='icon'
-          className='w-8 h-8 rounded-full'
           onClick={onClose}
+          className='w-8 h-8 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 shrink-0'
         >
-          <X className='w-4 h-4' />
+          <X size={16} />
         </Button>
       </div>
 
-      {/* Scrollable Content */}
-      <div className='flex-1 overflow-y-auto p-4 space-y-6'>
-        {/* Common Fields */}
-        <div className='space-y-2'>
-          <Label>节点名称</Label>
-          <Input
-            value={formData.label || ""}
-            onChange={(e) => handleChange("label", e.target.value)}
-          />
-        </div>
-
-        <div className='space-y-2'>
-          <Label>描述 (可选)</Label>
-          <Input
-            value={formData.desc || ""}
-            onChange={(e) => handleChange("desc", e.target.value)}
-            placeholder='简短描述'
-          />
-        </div>
-
+      {/* Content */}
+      <div className='flex-1 overflow-y-auto p-5 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800 space-y-6'>
+        {/* Node Status & Results */}
         {(node.data as any).status && (node.data as any).status !== "idle" && (
-          <div className='p-4 rounded-xl border space-y-2 bg-slate-50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800'>
+          <div className='p-4 rounded-xl border space-y-3 bg-slate-50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800'>
             <div className='flex items-center justify-between'>
-              <Label className='text-xs text-slate-500'>执行结果</Label>
+              <Label className='text-[10px] font-bold text-slate-500 uppercase tracking-wider'>
+                最近执行结果
+              </Label>
               <div
                 className={cn(
-                  "text-[10px] px-2 py-0.5 rounded-full font-medium",
+                  "text-[10px] px-2 py-0.5 rounded-full font-bold uppercase",
                   (node.data as any).status === "success"
-                    ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20"
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
                     : (node.data as any).status === "error"
-                      ? "bg-rose-50 text-rose-600 dark:bg-rose-900/20"
-                      : "bg-blue-50 text-blue-600 dark:bg-blue-900/20",
+                      ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400"
+                      : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",
                 )}
               >
                 {(node.data as any).status === "success"
                   ? "成功"
                   : (node.data as any).status === "error"
                     ? "失败"
-                    : "执行中"}
+                    : "运行中"}
               </div>
             </div>
             {(node.data as any).output && (
-              <div className='p-3 bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-lg text-[11px] font-mono break-all max-h-[150px] overflow-y-auto'>
+              <div className='p-3 bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-lg text-[11px] font-mono break-all max-h-[150px] overflow-y-auto shadow-inner text-slate-700 dark:text-slate-300'>
                 {typeof (node.data as any).output === "string"
                   ? (node.data as any).output
                   : JSON.stringify((node.data as any).output, null, 2)}
               </div>
             )}
             {(node.data as any).error && (
-              <div className='text-[11px] text-rose-500 bg-rose-50 dark:bg-rose-900/10 p-2 rounded-lg'>
+              <div className='text-[10px] text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/20 p-2 rounded-lg border border-rose-100 dark:border-rose-900/30'>
                 错误: {String((node.data as any).error)}
               </div>
             )}
           </div>
         )}
 
-        {/* Dynamic Content */}
-        {renderContent()}
+        {/* Node Input (Inferred) */}
+        {((node.data as any).status && (node.data as any).status !== "idle") ||
+        (["start", "cron_trigger", "webhook"].includes(node.type || "") &&
+          lastTestInput) ? (
+          <div className='p-4 rounded-xl border space-y-3 bg-slate-50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800'>
+            <Label className='text-[10px] font-bold text-slate-500 uppercase tracking-wider'>
+              输入数据 (Input)
+            </Label>
+            <div className='p-3 bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-lg text-[11px] font-mono break-all max-h-[150px] overflow-y-auto shadow-inner text-slate-700 dark:text-slate-300'>
+              {["start", "cron_trigger", "webhook"].includes(node.type || "")
+                ? lastTestInput || "(无输入 - 手动触发)"
+                : upstreamNodeIds.length > 0
+                  ? nodes
+                      .filter((n) => upstreamNodeIds.includes(n.id))
+                      .map((n) => (
+                        <div
+                          key={n.id}
+                          className='mb-2 last:mb-0 border-b last:border-0 border-slate-100 dark:border-slate-800 pb-2 last:pb-0'
+                        >
+                          <div className='text-[10px] text-slate-400 mb-1'>
+                            来自: {String(n.data.label || n.type)}
+                          </div>
+                          <div>
+                            {typeof (n.data as any).output === "object"
+                              ? JSON.stringify((n.data as any).output, null, 2)
+                              : String(
+                                  (n.data as any).output !== undefined
+                                    ? (n.data as any).output
+                                    : "(等待执行)",
+                                )}
+                          </div>
+                        </div>
+                      ))
+                  : "(无上游输入)"}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Dynamic Config Form */}
+        <div className='space-y-4'>{renderContent()}</div>
+
+        {/* Variable Helper */}
+        {(node.type === "llm" ||
+          node.type === "process" ||
+          node.type === "text_template" ||
+          node.type === "template_transform" ||
+          node.type === "notification" ||
+          node.type === "variable_assignment") && (
+          <div className='mt-8 pt-6 border-t border-slate-200 dark:border-slate-800 space-y-3'>
+            <div className='flex items-center justify-between'>
+              <Label className='text-xs font-bold text-slate-500 uppercase tracking-widest'>
+                可用变量引用
+              </Label>
+              <span className='text-[10px] text-slate-400'>点击 ID 可复制</span>
+            </div>
+            <div className='grid gap-2'>
+              <div
+                className='flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-xs'
+                title='用户最开始输入的文字'
+              >
+                <div className='flex items-center gap-2'>
+                  <div className='w-4 h-4 rounded bg-emerald-500/10 flex items-center justify-center'>
+                    <Zap className='w-3 h-3 text-emerald-600' />
+                  </div>
+                  <span className='font-medium text-slate-600 dark:text-slate-400'>
+                    原始输入
+                  </span>
+                </div>
+                <code
+                  className='px-1.5 py-0.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded text-emerald-600 font-mono cursor-pointer hover:bg-emerald-50 transition-colors'
+                  onClick={() => {
+                    navigator.clipboard.writeText("{{input}}");
+                    toast.success("已复制 {{input}}");
+                  }}
+                >
+                  {"{{input}}"}
+                </code>
+              </div>
+
+              {nodes
+                .filter((n: Node) => upstreamNodeIds.includes(n.id))
+                .map((n: Node) => (
+                  <div
+                    key={n.id}
+                    className='flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-xs'
+                  >
+                    <div className='flex items-center gap-2 overflow-hidden'>
+                      <div className='w-4 h-4 rounded bg-violet-500/10 flex items-center justify-center shrink-0'>
+                        <span className='text-[8px] font-bold text-violet-600 uppercase'>
+                          {(n.type || "N").charAt(0)}
+                        </span>
+                      </div>
+                      <span className='font-medium text-slate-600 dark:text-slate-400 truncate'>
+                        {String(n.data.label || n.type)}
+                      </span>
+                    </div>
+                    <code
+                      className='px-1.5 py-0.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded text-violet-600 font-mono cursor-pointer hover:bg-violet-50 transition-colors shrink-0'
+                      onClick={() => {
+                        navigator.clipboard.writeText(`{{${n.id}}}`);
+                        toast.success(`已复制 {{${n.id}}}`);
+                      }}
+                    >
+                      {`{{${n.id.split("-")[0]}...}}`}
+                    </code>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer */}
-      <div className='p-4 border-t border-slate-100 dark:border-slate-800 flex gap-2'>
+      <div className='p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex gap-2'>
         <Button
-          onClick={handleSave}
-          className='flex-1 bg-violet-600 hover:bg-violet-700 text-white'
-        >
-          <Save className='w-4 h-4 mr-2' />
-          保存
-        </Button>
-        <Button
-          variant='destructive'
-          size='icon'
+          variant='ghost'
+          size='sm'
+          className='flex-1 gap-2 rounded-xl h-9 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20'
           onClick={() => {
-            if (confirm("确定要删除这个节点吗？")) {
+            if (confirm("确定要删除此节点吗？")) {
               onDelete(node.id);
-              onClose();
             }
           }}
-          className='shrink-0'
         >
-          <Trash2 className='w-4 h-4' />
+          <Trash2 size={14} />
+          删除
+        </Button>
+        <Button
+          size='sm'
+          className='flex-[2] gap-2 rounded-xl h-9 text-xs bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20 font-bold'
+          onClick={handleSave}
+        >
+          <Save size={14} />
+          保存更改
         </Button>
       </div>
     </div>

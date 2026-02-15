@@ -25,6 +25,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
 
 import {
   getReadableDescription,
@@ -39,6 +40,7 @@ export interface EmployeeItem {
   config?: string;
   workflow?: string;
   permissions?: string;
+  isActive?: boolean;
   linkedFrom?: any[];
   linkedTo?: any[];
 }
@@ -77,6 +79,7 @@ interface EmployeeListPanelProps {
   onAdd: () => void;
   onDelete: (id: string) => void;
   onDuplicate: (employee: EmployeeItem) => void;
+  onToggleActive: (id: string, active: boolean) => void;
 }
 
 export function EmployeeListPanel({
@@ -86,6 +89,7 @@ export function EmployeeListPanel({
   onAdd,
   onDelete,
   onDuplicate,
+  onToggleActive,
 }: EmployeeListPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -172,6 +176,7 @@ export function EmployeeListPanel({
                 roleColors[emp.role] || "from-slate-500 to-slate-600";
               const hasWorkflow = !!emp.workflow;
               const subCount = emp.linkedFrom?.length || 0;
+              const isActive = emp.isActive !== false; // Default to true
 
               let parsedPermissions: any = {};
               try {
@@ -222,8 +227,9 @@ export function EmployeeListPanel({
                     {/* Role Icon */}
                     <div
                       className={cn(
-                        "p-1.5 rounded-lg bg-gradient-to-br flex-shrink-0 mt-0.5",
+                        "p-1.5 rounded-lg bg-gradient-to-br flex-shrink-0 mt-0.5 transition-all",
                         color,
+                        !isActive && "grayscale opacity-60",
                       )}
                     >
                       <IconComp className='w-3.5 h-3.5 text-white' />
@@ -231,20 +237,25 @@ export function EmployeeListPanel({
 
                     <div className='flex-1 min-w-0'>
                       <div className='flex items-center justify-between gap-1'>
-                        <span className='text-sm font-semibold text-slate-800 dark:text-slate-200 truncate'>
+                        <span
+                          className={cn(
+                            "text-sm font-semibold truncate transition-colors",
+                            isActive
+                              ? "text-slate-800 dark:text-slate-200"
+                              : "text-slate-400 dark:text-slate-500 italic",
+                          )}
+                        >
                           {emp.name}
                         </span>
                         <div className='flex items-center gap-1 flex-shrink-0'>
-                          {/* Status Dot */}
-                          <div
-                            className={cn(
-                              "w-1.5 h-1.5 rounded-full",
-                              emp.status === "active"
-                                ? "bg-emerald-500"
-                                : emp.status === "working"
-                                  ? "bg-amber-500 animate-pulse"
-                                  : "bg-slate-300 dark:bg-slate-600",
-                            )}
+                          <Switch
+                            size='sm'
+                            checked={isActive}
+                            onCheckedChange={(checked) => {
+                              onToggleActive(emp.id, checked);
+                            }}
+                            className='data-[state=checked]:bg-violet-600 scale-75'
+                            onClick={(e) => e.stopPropagation()}
                           />
                           <ChevronRight
                             className={cn(
