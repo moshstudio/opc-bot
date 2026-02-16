@@ -210,7 +210,7 @@ export const processExecutor: NodeExecutor = {
       context.variables,
     );
 
-    const agent = getMastraAgent("assistant", model, systemPrompt);
+    const agent = await getMastraAgent("assistant", model, systemPrompt);
 
     const retryCount = data.retryCount || 0;
     const timeout = data.timeout || 30000;

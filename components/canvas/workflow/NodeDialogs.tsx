@@ -31,6 +31,7 @@ import {
 import { generateCron } from "@/lib/workflow/cron-utils";
 import { CronConfigurator, CronConfigData } from "./CronConfigurator";
 import { SchemaBuilder } from "./SchemaBuilder";
+import { nanoid } from "nanoid";
 
 interface NodeDialogsProps {
   activeDialog: string | null;
@@ -216,7 +217,7 @@ export function NodeDialogs({
             <div className='space-y-2'>
               <Label>Webhook URL</Label>
               <div className='p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono break-all text-slate-500'>
-                {`https://api.opc-bot.com/v1/webhooks/workflow/${crypto.randomUUID()}`}
+                {`https://api.opc-bot.com/v1/webhooks/workflow/${nanoid()}`}
               </div>
               <p className='text-[10px] text-muted-foreground'>
                 向此 URL 发送 POST 请求以触发工作流。

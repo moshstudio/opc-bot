@@ -1,4 +1,5 @@
 import { memo, useState } from "react";
+import { nanoid } from "nanoid";
 import {
   Handle,
   Position,
@@ -12,6 +13,7 @@ import {
   getColorClasses,
   MODEL_PROVIDER_ICONS,
 } from "./nodeTypeConfig";
+import { getReadableDescription } from "@/lib/workflow/cron-utils";
 import { cn } from "@/lib/utils";
 import {
   Copy,
@@ -27,9 +29,12 @@ interface WorkflowNodeData extends Record<string, unknown> {
   label?: string;
   desc?: string;
   employeeName?: string;
+  isUnreachable?: boolean;
   status?: "idle" | "running" | "success" | "error";
   error?: string;
   modelProvider?: string;
+  cron?: string;
+  frequency?: any;
 }
 
 type WorkflowNode = Node<WorkflowNodeData>;
@@ -52,7 +57,7 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
     if (node) {
       const newNode = {
         ...node,
-        id: crypto.randomUUID(),
+        id: nanoid(),
         position: { x: node.position.x + 40, y: node.position.y + 40 },
         selected: false,
       };
@@ -113,6 +118,7 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
             ? `ring-2 ring-offset-1 ${colors.borderSelected}`
             : "hover:shadow-md",
           colors.border,
+          data.isUnreachable && "opacity-60 grayscale-[0.2] border-dashed",
         )}
       >
         {/* 顶部标题栏 */}
@@ -128,8 +134,17 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
           </div>
 
           {/* Status Indicators */}
-          {data.status && data.status !== "idle" && (
+          {(data.status && data.status !== "idle") || data.isUnreachable ? (
             <div className='flex items-center gap-1.5'>
+              {data.isUnreachable && (
+                <div
+                  className='flex items-center gap-1 bg-amber-500/20 px-1.5 rounded text-[10px] text-white/90'
+                  title='该节点未连接到主流程，将不会被执行'
+                >
+                  <AlertCircle className='w-2.5 h-2.5' />
+                  <span>不可达</span>
+                </div>
+              )}
               {data.status === "running" && (
                 <Loader2 className='w-3 h-3 animate-spin' />
               )}
@@ -138,7 +153,7 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
               )}
               {data.status === "error" && <AlertCircle className='w-3 h-3' />}
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* 内容区域 */}
@@ -147,7 +162,9 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
             {(data.label as string) || theme.defaultLabel}
           </div>
 
-          {(data.desc || (type === "sub_employee" && data.employeeName)) && (
+          {(data.desc ||
+            (type === "sub_employee" && data.employeeName) ||
+            (type === "cron_trigger" && data.cron)) && (
             <div className='flex flex-wrap gap-1.5'>
               {data.desc && (
                 <div className='text-[10px] text-slate-500 line-clamp-2 w-full'>
@@ -162,12 +179,21 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
                   {data.employeeName as string}
                 </div>
               )}
+
+              {/* 定时触发特定展示 */}
+              {theme.showSchedule && data.cron && (
+                <div className='text-[10px] bg-teal-50 dark:bg-teal-950/30 text-teal-600 dark:text-teal-400 rounded-full px-2 py-0.5 flex items-center gap-1 border border-teal-100 dark:border-teal-800'>
+                  <span className='w-1 h-1 rounded-full bg-teal-500'></span>
+                  {getReadableDescription(data as any)}
+                </div>
+              )}
             </div>
           )}
 
           {/* Badges Overlay (Models/Tools) */}
           <div className='flex items-center gap-1.5 mt-1 pt-1 border-t border-slate-100 dark:border-slate-800/50'>
             {data.modelProvider && MODEL_PROVIDER_ICONS[data.modelProvider] && (
+              /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={MODEL_PROVIDER_ICONS[data.modelProvider]}
                 alt={data.modelProvider}
@@ -186,11 +212,11 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
             type='target'
             position={Position.Left}
             className={cn(
-              "w-2.5 h-2.5 !bg-white dark:!bg-slate-900 border-2 transition-opacity",
-              isHovered || selected ? "opacity-100" : "opacity-0",
-              colors.handleBg.replace("bg-", "border-"),
+              "w-3 h-3 border-2 border-white dark:border-slate-900 shadow-sm transition-all duration-200 hover:scale-125",
+              isHovered || selected ? "opacity-100 scale-110" : "opacity-40",
+              colors.handleBg,
             )}
-            style={{ left: -5, top: "50%" }}
+            style={{ left: -6, top: "50%" }}
           />
         )}
 
@@ -203,20 +229,24 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
                   position={Position.Right}
                   id='true'
                   className={cn(
-                    "w-2.5 h-2.5 !bg-emerald-500 border-2 border-white dark:border-slate-950 !top-[35%] transition-opacity",
-                    isHovered || selected ? "opacity-100" : "opacity-0",
+                    "w-3 h-3 !bg-emerald-500 border-2 border-white dark:border-slate-950 !top-[35%] shadow-sm transition-all duration-200 hover:scale-125",
+                    isHovered || selected
+                      ? "opacity-100 scale-110"
+                      : "opacity-60",
                   )}
-                  style={{ right: -5 }}
+                  style={{ right: -6 }}
                 />
                 <Handle
                   type='source'
                   position={Position.Right}
                   id='false'
                   className={cn(
-                    "w-2.5 h-2.5 !bg-rose-500 border-2 border-white dark:border-slate-950 !top-[65%] transition-opacity",
-                    isHovered || selected ? "opacity-100" : "opacity-0",
+                    "w-3 h-3 !bg-rose-500 border-2 border-white dark:border-slate-950 !top-[65%] shadow-sm transition-all duration-200 hover:scale-125",
+                    isHovered || selected
+                      ? "opacity-100 scale-110"
+                      : "opacity-60",
                   )}
-                  style={{ right: -5 }}
+                  style={{ right: -6 }}
                 />
               </>
             ) : (
@@ -224,11 +254,13 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
                 type='source'
                 position={Position.Right}
                 className={cn(
-                  "w-2.5 h-2.5 !bg-white dark:!bg-slate-900 border-2 transition-opacity",
-                  isHovered || selected ? "opacity-100" : "opacity-0",
-                  colors.handleBg.replace("bg-", "border-"),
+                  "w-3 h-3 border-2 border-white dark:border-slate-900 shadow-sm transition-all duration-200 hover:scale-125",
+                  isHovered || selected
+                    ? "opacity-100 scale-110"
+                    : "opacity-40",
+                  colors.handleBg,
                 )}
-                style={{ right: -5, top: "50%" }}
+                style={{ right: -6, top: "50%" }}
               />
             )}
           </>

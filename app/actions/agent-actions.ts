@@ -1,12 +1,12 @@
 "use server";
 
-import { createAgent } from "@/lib/agents/agent-factory";
+import { getMastraAgent } from "@/lib/mastra/agents";
 
 export async function runAgentAction(role: string, input: string) {
   try {
-    const agent = await createAgent(role);
-    const response = await agent.invoke(input);
-    return { success: true, response };
+    const agent = await getMastraAgent(role);
+    const result = await agent.generate(input);
+    return { success: true, response: result.text };
   } catch (error: any) {
     console.error("Agent Error:", error);
     return { success: false, error: error.message };

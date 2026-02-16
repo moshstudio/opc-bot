@@ -61,6 +61,8 @@ export interface NodeTheme {
   allowRetry?: boolean;
   /** 是否允许设置超时 */
   allowTimeout?: boolean;
+  /** 是否在节点上显示执行计划（仅定时触发使用） */
+  showSchedule?: boolean;
 }
 
 /** 模型提供商图标映射 */
@@ -97,6 +99,7 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     menuLabel: "定时触发器",
     menuDesc: "按 Cron 表达式定时触发工作流",
     needsDialog: true,
+    showSchedule: true,
   },
   webhook: {
     typeLabel: "Webhook",

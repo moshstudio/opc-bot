@@ -237,7 +237,7 @@ export class WorkflowEngine {
   /**
    * 获取最后一个完成节点的输出
    */
-  private getLastOutput(): string {
+  private getLastOutput(): any {
     const completed = this.nodeResults.filter((r) => r.status === "completed");
     if (completed.length === 0) return "";
     return completed[completed.length - 1].output || "";
@@ -251,19 +251,17 @@ export async function executeWorkflow(
   definition: WorkflowDefinition,
   input: string,
   employeeId: string,
-  employeeConfig?: {
-    companyId?: string;
-    model?: string;
-    prompt?: string;
-    temperature?: number;
-    modelConfig?: {
-      baseUrl?: string;
-      apiKey?: string;
-    };
-  },
+  employeeConfig?: any,
+  onStepUpdate?: ExecutionCallback,
 ): Promise<WorkflowExecutionResult> {
   // 深度集成：使用 Mastra 执行引擎接管全量逻辑
   const { executeMastraWorkflow } = await import("../mastra/workflows");
 
-  return executeMastraWorkflow(definition, input, employeeId, employeeConfig);
+  return executeMastraWorkflow(
+    definition,
+    input,
+    employeeId,
+    employeeConfig,
+    onStepUpdate,
+  );
 }

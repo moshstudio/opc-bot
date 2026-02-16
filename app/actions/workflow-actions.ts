@@ -71,9 +71,14 @@ export async function executeEmployeeWorkflow(
         });
 
         if (result.success && result.finalOutput) {
+          const messageContent =
+            typeof result.finalOutput === "string"
+              ? result.finalOutput
+              : JSON.stringify(result.finalOutput);
+
           await db.message.create({
             data: {
-              content: result.finalOutput,
+              content: messageContent,
               role: "assistant",
               employeeId,
             },
@@ -100,7 +105,10 @@ export async function executeEmployeeWorkflow(
       return {
         success: result.success,
         result,
-        message: result.finalOutput,
+        message:
+          typeof result.finalOutput === "string"
+            ? result.finalOutput
+            : JSON.stringify(result.finalOutput),
         error: result.error,
       };
     } else {

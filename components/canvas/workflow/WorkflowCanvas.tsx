@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import {
   ReactFlow,
   Controls,
@@ -16,6 +16,7 @@ import {
   MiniMap,
 } from "@xyflow/react";
 import { Grid3X3, Lock, Unlock, Map as MapIcon } from "lucide-react";
+import { nanoid } from "nanoid";
 import { cn } from "@/lib/utils";
 import "@xyflow/react/dist/style.css";
 import { NodeDialogs } from "./NodeDialogs";
@@ -25,7 +26,6 @@ import { WorkflowNodeTypes } from "./WorkflowNodeTypes";
 import { NODE_THEMES, type NodeTheme } from "./nodeTypeConfig";
 import { useModelContext } from "@/components/ModelContext";
 import { Button } from "@/components/ui/button";
-import { testExecuteWorkflow } from "@/app/actions/workflow-actions";
 import { Play, Loader2, Save, Plus } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -99,6 +99,60 @@ function WorkflowCanvasContent({
   );
   const [testDrawerOpen, setTestDrawerOpen] = useState(false);
 
+  // 监听节点和连线变化，更新节点“不可达”状态
+  useEffect(() => {
+    const TRIGGER_TYPES = ["start", "cron_trigger", "webhook"];
+    const startNodes = nodes.filter((n) =>
+      TRIGGER_TYPES.includes(n.type || ""),
+    );
+
+    const reachableIds = new Set<string>();
+    if (startNodes.length > 0) {
+      const queue = [...startNodes];
+      startNodes.forEach((n) => reachableIds.add(n.id));
+
+      const adj = new Map<string, string[]>();
+      edges.forEach((e) => {
+        if (!adj.has(e.source)) adj.set(e.source, []);
+        adj.get(e.source)!.push(e.target);
+      });
+
+      let head = 0;
+      while (head < queue.length) {
+        const curr = queue[head++];
+        const neighbors = adj.get(curr.id) || [];
+        for (const targetId of neighbors) {
+          if (!reachableIds.has(targetId)) {
+            reachableIds.add(targetId);
+            const targetNode = nodes.find((n) => n.id === targetId);
+            if (targetNode) queue.push(targetNode);
+          }
+        }
+      }
+    }
+
+    // 更新节点数据（仅在状态变化时）
+    const needsUpdate = nodes.some((node) => {
+      const isUnreachable = !reachableIds.has(node.id);
+      return node.data.isUnreachable !== isUnreachable;
+    });
+
+    if (needsUpdate) {
+      setNodes((nds) =>
+        nds.map((node) => {
+          const isUnreachable = !reachableIds.has(node.id);
+          if (node.data.isUnreachable !== isUnreachable) {
+            return {
+              ...node,
+              data: { ...node.data, isUnreachable },
+            };
+          }
+          return node;
+        }),
+      );
+    }
+  }, [nodes, edges, setNodes]); // 监听节点和边的变化
+
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
@@ -119,7 +173,7 @@ function WorkflowCanvasContent({
       const theme = NODE_THEMES[type] || NODE_THEMES.process;
 
       const newNode: Node = {
-        id: crypto.randomUUID(),
+        id: nanoid(),
         type,
         position,
         data: {
@@ -154,6 +208,7 @@ function WorkflowCanvasContent({
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id);
+    setTestDrawerOpen(false);
     setAddPanelOpen(false);
   }, []);
 
@@ -198,7 +253,7 @@ function WorkflowCanvasContent({
   const handleCreateNode = useCallback(
     (type: string, data: any) => {
       const newNode: Node = {
-        id: crypto.randomUUID(),
+        id: nanoid(),
         type,
         position: {
           x: Math.random() * 500 + 150,
@@ -218,12 +273,14 @@ function WorkflowCanvasContent({
       if (theme.needsDialog) {
         // For types with a dialog, open the dialog for configuration
         setActiveDialog(type);
+        setTestDrawerOpen(false);
         setAddPanelOpen(false);
       } else {
         // For simple types, create node directly with defaults
         handleCreateNode(type, {
           label: theme.defaultLabel,
         });
+        setTestDrawerOpen(false);
         setAddPanelOpen(false);
       }
     },
@@ -246,6 +303,8 @@ function WorkflowCanvasContent({
       setIsExecuting(true);
       setTestDialogOpen(false);
       setLastTestInput(input);
+      setSelectedNodeId(null);
+      setAddPanelOpen(false);
       setTestDrawerOpen(true);
       setTestResult(null);
 
@@ -271,58 +330,86 @@ function WorkflowCanvasContent({
         );
 
         // 2. 执行工作流
-        // 注意：这里的 nodes 是闭包捕获的当前状态，对于执行逻辑是正确的
-        // 深度克隆以确保传递给 Server Action 的是纯粹的 JSON 对象，避免 React Flow 内部属性导致的序列化问题
-        const result = await testExecuteWorkflow(
-          currentEmployeeId,
-          {
-            nodes: JSON.parse(JSON.stringify(nodes)) as any as WorkflowNode[],
-            edges: JSON.parse(JSON.stringify(edges)) as any as WorkflowEdge[],
-          },
-          input,
-        );
-
-        if (!result) {
-          throw new Error("执行引擎未返回结果");
-        }
-
-        setTestResult(result);
-
-        if (result.success) {
-          toast.success("工作流预览运行成功");
-        } else {
-          toast.error(`工作流运行失败: ${result.error || "未知原因"}`);
-        }
-
-        // 3. 更新节点状态
-        setNodes((nds) => {
-          if (!result.nodeResults) return nds;
-
-          return nds.map((node) => {
-            const nodeResult = result.nodeResults.find(
-              (r) => r.nodeId === node.id,
-            );
-            if (nodeResult) {
-              return {
-                ...node,
-                data: {
-                  ...node.data,
-                  status:
-                    nodeResult.status === "completed"
-                      ? "success"
-                      : nodeResult.status === "failed"
-                        ? "error"
-                        : nodeResult.status === "skipped"
-                          ? "idle"
-                          : "running",
-                  output: nodeResult.output,
-                  error: nodeResult.error,
-                },
-              };
-            }
-            return node;
-          });
+        // 使用 API Route 提供的流式输出
+        const response = await fetch("/api/workflow/test/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            employeeId: currentEmployeeId,
+            definition: {
+              nodes: JSON.parse(JSON.stringify(nodes)) as any as WorkflowNode[],
+              edges: JSON.parse(JSON.stringify(edges)) as any as WorkflowEdge[],
+            },
+            input,
+          }),
         });
+
+        if (!response.ok) {
+          throw new Error("执行请求失败");
+        }
+
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        if (!reader) {
+          throw new Error("无法读取响应流");
+        }
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const chunk = JSON.parse(line);
+
+              if (chunk.type === "update") {
+                // 实时更新单个节点状态
+                setNodes((nds) =>
+                  nds.map((node) => {
+                    if (node.id === chunk.nodeId) {
+                      return {
+                        ...node,
+                        data: {
+                          ...node.data,
+                          status:
+                            chunk.status === "completed"
+                              ? "success"
+                              : chunk.status === "failed"
+                                ? "error"
+                                : chunk.status === "skipped"
+                                  ? "idle"
+                                  : "running",
+                          output: chunk.output,
+                          error: chunk.error,
+                        },
+                      };
+                    }
+                    return node;
+                  }),
+                );
+              } else if (chunk.type === "final") {
+                const result = chunk.result;
+                setTestResult(result);
+                if (result.success) {
+                  toast.success("工作流预览运行成功");
+                } else {
+                  toast.error(`工作流运行失败: ${result.error || "未知原因"}`);
+                }
+              } else if (chunk.type === "error") {
+                throw new Error(chunk.error);
+              }
+            } catch (e) {
+              console.warn("Parse stream chunk error", e);
+            }
+          }
+        }
       } catch (error: any) {
         console.error("Workflow canvas execution error:", error);
         toast.error(`执行出错: ${error.message || "未知错误"}`);
@@ -465,6 +552,7 @@ function WorkflowCanvasContent({
           <Button
             onClick={() => {
               setAddPanelOpen(!addPanelOpen);
+              setTestDrawerOpen(false);
               setSelectedNodeId(null);
             }}
             variant={addPanelOpen ? "secondary" : "outline"}

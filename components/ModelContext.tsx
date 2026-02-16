@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { nanoid } from "nanoid";
 import {
   getAiModels,
   createAiModel,
@@ -61,8 +62,7 @@ export function ModelProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addModel = async (modelData: Partial<Model>) => {
-    // Optimistic Update
-    const tempId = crypto.randomUUID();
+    const tempId = nanoid();
     const newModel = {
       ...modelData,
       id: tempId,
@@ -74,7 +74,9 @@ export function ModelProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const saved = await createAiModel(newModel);
-      setModels((prev) => prev.map((m) => (m.id === tempId ? saved : m)));
+      setModels((prev) =>
+        prev.map((m) => (m.id === tempId ? (saved as unknown as Model) : m)),
+      );
       toast.success("模型已保存");
     } catch (e) {
       console.error("Failed to create model", e);

@@ -15,6 +15,12 @@ export async function executeMastraWorkflow(
   input: string,
   employeeId: string,
   employeeConfig?: any,
+  onStepUpdate?: (
+    nodeId: string,
+    status: NodeExecutionResult["status"],
+    output?: string,
+    error?: string,
+  ) => void,
 ): Promise<WorkflowExecutionResult> {
   console.log(
     `[Mastra] Starting workflow execution for employee: ${employeeId}`,
@@ -40,7 +46,7 @@ export async function executeMastraWorkflow(
       case "webhook":
         return steps.startStep;
       case "knowledge_retrieval":
-        return steps.retrievalStep;
+        return steps.knowledgeRetrievalStep;
       case "llm":
       case "process":
         return steps.agentStep;
@@ -79,10 +85,22 @@ export async function executeMastraWorkflow(
 
   // 4. 分层执行 (BFS)
   let currentWf = wf;
-  let queue = definition.nodes.filter((n) => (inDegree.get(n.id) || 0) === 0);
+
+  // 仅仅从触发器节点开始执行
+  const TRIGGER_TYPES = ["start", "cron_trigger", "webhook"];
+  let queue = definition.nodes.filter(
+    (n) => (inDegree.get(n.id) || 0) === 0 && TRIGGER_TYPES.includes(n.type),
+  );
+
+  // 如果没有发现可运行的触发器，但存在节点，则提示错误（支持 DAG 的严格起始点）
+  if (queue.length === 0 && definition.nodes.length > 0) {
+    throw new Error(
+      "工作流缺少开始节点或触发器不可达 (请确保至少有一个触发器且未被依赖)",
+    );
+  }
 
   console.log(
-    `[Mastra] Initial layer (in-degree 0):`,
+    `[Mastra] Initial layer (Triggers with in-degree 0):`,
     queue.map((n) => n.id),
   );
 
@@ -100,38 +118,27 @@ export async function executeMastraWorkflow(
         }
 
         // 使用 createStep 动态创建新 Step，注入 node.data 作为默认参数
-        // 我们将 inputSchema 设为 z.any() 以绕过严格的步间类型检查 (因为我们是在运行时动态组装)
-        // 并在 execute 中手动合并配置数据
         return createStep({
           id: node.id,
           inputSchema: z.any(),
-          outputSchema: z.any(), // baseStep.outputSchema
+          outputSchema: z.any(),
           execute: async (params) => {
-            // 1. 获取上一节点的输出 (inputData)
             const incomingData = params.inputData || {};
-
-            // 2. 获取节点配置 (node.data)
             const configData = node.data || {};
-
-            // 3. 合并数据：配置数据优先，但允许输入数据覆盖(如果需要的话)?
-            // 通常：User Input (flow data) > Static Config (node data)
-            // 但是对于 prompt 这种，通常是 Static Config。
-            // 对于 input 这种，通常是 User Input。
-            // 让我们混合：
             const mergedInput = {
-              companyId, // 始终注入 Context
-              modelConfig: employeeConfig?.modelConfig, // 默认：员工模型配置
-              provider: employeeConfig?.provider, // 默认：员工模型提供商
-              ...configData, // 覆盖：节点特定配置 (如果存在)
-              ...incomingData, // 覆盖：上游动态输入 (最高优先级)
+              companyId,
+              role: employeeConfig?.role,
+              name: employeeConfig?.name,
+              modelConfig: employeeConfig?.modelConfig,
+              provider: employeeConfig?.provider,
+              ...configData,
+              ...incomingData,
             };
 
-            // 特殊处理：如果上游输出是 { output: "..." } 且当前节点需要 input，则映射一下
             if (incomingData.output && !mergedInput.input) {
               mergedInput.input = incomingData.output;
             }
 
-            // 4. 调用原始 Step 的逻辑
             return baseStep.execute({
               ...params,
               inputData: mergedInput,
@@ -147,10 +154,6 @@ export async function executeMastraWorkflow(
       } else {
         currentWf = currentWf.parallel(stepsToAdd);
       }
-      console.log(
-        `[Mastra] Added layer with ${stepsToAdd.length} steps:`,
-        stepsToAdd.map((s) => s.id),
-      );
     }
 
     // 计算下一层
@@ -166,7 +169,6 @@ export async function executeMastraWorkflow(
       });
     });
 
-    // 保持确定性顺序 (Optional but good for debugging)
     const nextNodes = definition.nodes.filter((n) =>
       nextLayerCandidates.has(n.id),
     );
@@ -176,25 +178,58 @@ export async function executeMastraWorkflow(
   }
 
   const commitWorkflow = currentWf.commit();
-  console.log("[Mastra] Workflow committed, ready to execute.");
 
   try {
     const run = await commitWorkflow.createRun();
-    const result = await run.start({
+    // 使用 stream 模式运行
+    const stream = run.stream({
       inputData: { input, companyId },
     });
 
+    console.log("[Mastra] Workflow stream started.");
+
+    // 监听 stream 以获得实时进度
+    const streamPromise = (async () => {
+      try {
+        for await (const chunk of stream.fullStream) {
+          if (chunk.type === "workflow-step-start") {
+            const stepId = (chunk as any).payload?.id || (chunk as any).stepId;
+            console.log(`[Mastra] Step started: ${stepId}`);
+            onStepUpdate?.(stepId, "running");
+          } else if (chunk.type === "workflow-step-result") {
+            const stepId = (chunk as any).payload?.id || (chunk as any).stepId;
+            const payload = (chunk as any).payload;
+            const status =
+              payload?.status === "success" ? "completed" : "failed";
+            console.log(`[Mastra] Step finished: ${stepId} (${status})`);
+
+            const output = payload?.output;
+
+            onStepUpdate?.(
+              stepId,
+              status,
+              output,
+              payload?.status === "failed"
+                ? payload?.error?.message
+                : undefined,
+            );
+          }
+        }
+      } catch (err) {
+        console.error("[Mastra] Error in stream listener:", err);
+      }
+    })();
+
+    const [result] = await Promise.all([stream.result, streamPromise]);
     console.log(`[Mastra] Workflow execution status: ${result.status}`);
 
     const steps = result.steps || {};
     const nodeResults = Object.entries(steps)
       .map(([stepId, stepResult]: [string, any]) => {
         const nodeDef = definition.nodes.find((n) => n.id === stepId);
-
-        // Filter out internal steps (like triggers) that don't match our canvas nodes
         if (!nodeDef) return null;
 
-        let status: "completed" | "failed" = "completed";
+        let status: NodeExecutionResult["status"] = "completed";
         if (stepResult.status !== "success") {
           status = "failed";
         }
@@ -204,27 +239,22 @@ export async function executeMastraWorkflow(
           nodeType: (nodeDef?.type as any) || "process",
           nodeLabel: nodeDef?.data.label || "",
           status,
-          output:
-            typeof stepResult.output === "object"
-              ? JSON.stringify(stepResult.output)
-              : String(stepResult.output || ""),
+          output: stepResult.output,
           startTime,
         };
       })
       .filter((r) => r !== null) as NodeExecutionResult[];
 
     if (result.status === "success") {
-      console.log("[Mastra] success result:", result.result);
       return {
         success: true,
-        finalOutput: JSON.stringify(result.result),
+        finalOutput: result.result,
         nodeResults,
         totalDuration: Date.now() - startTime,
       };
     } else {
       let errorMessage = `Workflow finished with status: ${result.status}`;
       if (result.status === "failed") {
-        console.error("[Mastra] Workflow failed:", result.error);
         errorMessage = result.error?.message || errorMessage;
       }
 
@@ -237,10 +267,7 @@ export async function executeMastraWorkflow(
       };
     }
   } catch (error: any) {
-    console.error("[Mastra] Workflow execution failed with error:", error);
-    if (error.stack) {
-      console.error("[Mastra] Error stack:", error.stack);
-    }
+    console.error("[Mastra] Workflow execution failed:", error);
     return {
       success: false,
       finalOutput: "",

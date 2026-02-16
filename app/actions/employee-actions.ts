@@ -269,3 +269,47 @@ export async function getEmployeeLogs(employeeId: string, limit: number = 50) {
     return { success: false, error: error.message };
   }
 }
+
+export async function deleteEmployeeLog(logId: string) {
+  try {
+    await prisma.employeeLog.delete({
+      where: { id: logId },
+    });
+    return { success: true };
+  } catch (error: any) {
+    console.error("Failed to delete employee log:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function deleteEmployeeLogsBefore(
+  employeeId: string,
+  timestamp: Date,
+) {
+  try {
+    await prisma.employeeLog.deleteMany({
+      where: {
+        employeeId,
+        createdAt: {
+          lt: timestamp,
+        },
+      },
+    });
+    return { success: true };
+  } catch (error: any) {
+    console.error("Failed to delete employee logs before:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function clearEmployeeLogs(employeeId: string) {
+  try {
+    await prisma.employeeLog.deleteMany({
+      where: { employeeId },
+    });
+    return { success: true };
+  } catch (error: any) {
+    console.error("Failed to clear employee logs:", error);
+    return { success: false, error: error.message };
+  }
+}

@@ -54,9 +54,9 @@ export async function logWorkflowExecution(
   employeeName: string,
   input: string,
   success: boolean,
-  output?: string,
+  output?: any,
   error?: string,
-  nodeResults?: Array<{ nodeLabel: string; status: string; output?: string }>,
+  nodeResults?: Array<{ nodeLabel: string; status: string; output?: any }>,
   duration?: number,
 ) {
   const level: EmployeeLogLevel = success ? "success" : "error";
@@ -64,10 +64,18 @@ export async function logWorkflowExecution(
     ? `${employeeName} 完成工作流执行`
     : `${employeeName} 工作流执行失败`;
 
+  // 安全地转换输出为字符串
+  const safeOutput =
+    typeof output === "string"
+      ? output
+      : output !== undefined && output !== null
+        ? JSON.stringify(output)
+        : "";
+
   const contentParts = [
     `📋 输入指令: ${input}`,
     success
-      ? `✅ 执行结果: ${output?.substring(0, 500) || "完成"}`
+      ? `✅ 执行结果: ${safeOutput.substring(0, 500) || "完成"}`
       : `❌ 错误: ${error}`,
   ];
 
@@ -82,9 +90,17 @@ export async function logWorkflowExecution(
     content: contentParts.join("\n"),
     metadata: {
       input,
-      output: output?.substring(0, 1000),
+      output: safeOutput.substring(0, 1000),
       error,
-      nodeResults,
+      nodeResults: nodeResults?.map((n) => ({
+        ...n,
+        output:
+          typeof n.output === "string"
+            ? n.output
+            : n.output !== undefined && n.output !== null
+              ? JSON.stringify(n.output)
+              : n.output,
+      })),
       duration,
       success,
     },
@@ -101,14 +117,19 @@ export async function logChatResponse(
   userMessage: string,
   aiResponse: string,
 ) {
+  const safeUserMessage =
+    typeof userMessage === "string" ? userMessage : String(userMessage || "");
+  const safeAiResponse =
+    typeof aiResponse === "string" ? aiResponse : String(aiResponse || "");
+
   return createEmployeeLog({
     employeeId,
     type: "chat_response",
     title: `${employeeName} 回复了消息`,
-    content: `💬 用户: ${userMessage.substring(0, 200)}\n🤖 回复: ${aiResponse.substring(0, 500)}`,
+    content: `💬 用户: ${safeUserMessage.substring(0, 200)}\n🤖 回复: ${safeAiResponse.substring(0, 500)}`,
     metadata: {
-      userMessage: userMessage.substring(0, 500),
-      aiResponse: aiResponse.substring(0, 1000),
+      userMessage: safeUserMessage.substring(0, 500),
+      aiResponse: safeAiResponse.substring(0, 1000),
     },
     level: "info",
   });

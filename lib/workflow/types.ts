@@ -212,7 +212,7 @@ export interface NodeExecutionResult {
   nodeType: WorkflowNodeType;
   nodeLabel: string;
   status: NodeExecutionStatus;
-  output?: string;
+  output?: any;
   error?: string;
   startTime: number;
   endTime?: number;
@@ -225,7 +225,7 @@ export interface WorkflowContext {
   input: string;
 
   /** 变量存储：每个节点执行完后将输出存入 variables[nodeId] */
-  variables: Record<string, string>;
+  variables: Record<string, any>;
 
   /** 员工 ID（当前正在执行工作流的员工） */
   employeeId: string;
@@ -249,7 +249,7 @@ export interface WorkflowContext {
 export type ExecutionCallback = (
   nodeId: string,
   status: NodeExecutionStatus,
-  output?: string,
+  output?: any,
   error?: string,
 ) => void;
 
@@ -257,7 +257,7 @@ export type ExecutionCallback = (
 export interface WorkflowExecutionResult {
   success: boolean;
   /** 最终输出（output 节点的结果） */
-  finalOutput: string;
+  finalOutput: any;
   /** 所有节点执行详情 */
   nodeResults: NodeExecutionResult[];
   /** 总耗时 ms */

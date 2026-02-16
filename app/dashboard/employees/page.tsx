@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { v4 as uuidv4 } from "uuid";
+import { nanoid } from "nanoid";
 import { toast } from "sonner";
 import { getOrCreateCompany } from "@/app/actions/company-actions";
 import {
@@ -10,22 +10,14 @@ import {
   updateEmployee,
   deleteEmployee,
 } from "@/app/actions/employee-actions";
-import { executeEmployeeWorkflow } from "@/app/actions/workflow-actions";
-import { routeTaskToEmployees } from "@/app/actions/router-actions";
+
 import {
   EmployeeListPanel,
   EmployeeItem,
 } from "@/components/canvas/EmployeeListPanel";
 import { EmployeeEditorPanel } from "@/components/canvas/EmployeeEditorPanel";
 import { AddEmployeeDialog } from "@/components/canvas/AddEmployeeDialog";
-import {
-  BossCommandBar,
-  EmployeeOption,
-} from "@/components/canvas/BossCommandBar";
-import {
-  BossResultPanel,
-  DispatchResult,
-} from "@/components/canvas/BossResultPanel";
+
 import { Loader2, Users } from "lucide-react";
 
 export default function EmployeesPage() {
@@ -36,11 +28,6 @@ export default function EmployeesPage() {
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-
-  // Boss dispatch state
-  const [isWorking, setIsWorking] = useState(false);
-  const [dispatchResults, setDispatchResults] = useState<DispatchResult[]>([]);
-  const [lastCommand, setLastCommand] = useState("");
 
   // ----- Data fetching -----
   useEffect(() => {
@@ -101,8 +88,7 @@ export default function EmployeesPage() {
       temperature: 0.7,
     };
 
-    // Optimistic add
-    const tempId = uuidv4();
+    const tempId = nanoid();
     const newEmp: EmployeeItem = {
       id: tempId,
       name: data.name,
@@ -160,7 +146,7 @@ export default function EmployeesPage() {
     } catch {}
 
     const newName = `${emp.name} (副本)`;
-    const tempId = uuidv4();
+    const tempId = nanoid();
     const newEmp: EmployeeItem = {
       id: tempId,
       name: newName,
@@ -237,115 +223,6 @@ export default function EmployeesPage() {
       toast.success(active ? "员工已启用" : "员工已禁用");
     }
   };
-
-  // ----- Boss dispatch (走工作流引擎) -----
-  const handleBossDispatch = async (message: string, selectedIds: string[]) => {
-    setIsWorking(true);
-    setLastCommand(message);
-    setDispatchResults([]);
-
-    let targetEmployees: EmployeeItem[] = [];
-
-    if (selectedIds.length > 0) {
-      // Manual mode - use selected employees
-      targetEmployees = employees.filter((e) => selectedIds.includes(e.id));
-    } else if (companyId) {
-      // Auto mode - AI routing
-      const routerRes = await routeTaskToEmployees(message, companyId);
-      if (routerRes.success && routerRes.result) {
-        targetEmployees = employees.filter((e) =>
-          routerRes.result!.selectedEmployeeIds.includes(e.id),
-        );
-        if (targetEmployees.length > 0) {
-          toast.info(
-            `AI 已自动选择: ${targetEmployees.map((e) => e.name).join(", ")}`,
-          );
-        }
-      } else {
-        toast.error("智能路由失败，请手动选择员工");
-        setIsWorking(false);
-        return;
-      }
-    }
-
-    if (targetEmployees.length === 0) {
-      toast.warning("没有找到合适的执行者，请先添加员工或手动选择。");
-      setIsWorking(false);
-      return;
-    }
-
-    // Update status to working
-    setEmployees((prev) =>
-      prev.map((e) =>
-        targetEmployees.find((t) => t.id === e.id)
-          ? { ...e, status: "working" }
-          : e,
-      ),
-    );
-
-    try {
-      // 使用工作流引擎并行执行
-      const results = await Promise.all(
-        targetEmployees.map(async (emp) => {
-          const res = await executeEmployeeWorkflow(emp.id, message);
-
-          const dispatchResult: DispatchResult = {
-            employeeName: emp.name,
-            response: res.success
-              ? res.message || "完成"
-              : `错误: ${res.error}`,
-            status: res.success ? "success" : "error",
-          };
-
-          // 如果有工作流执行详情，附加上去
-          if (res.result) {
-            dispatchResult.nodeResults = res.result.nodeResults.map((nr) => ({
-              nodeId: nr.nodeId,
-              nodeType: nr.nodeType,
-              nodeLabel: nr.nodeLabel,
-              status: nr.status,
-              output: nr.output,
-              error: nr.error,
-              duration: nr.duration,
-            }));
-            dispatchResult.totalDuration = res.result.totalDuration;
-          }
-
-          return dispatchResult;
-        }),
-      );
-
-      setDispatchResults(results);
-
-      const successCount = results.filter((r) => r.status === "success").length;
-      if (successCount === results.length) {
-        toast.success(`全部 ${successCount} 位员工已完成任务`);
-      } else {
-        toast.warning(`${successCount}/${results.length} 位员工完成任务`);
-      }
-    } catch (e) {
-      console.error("Dispatch error", e);
-      toast.error("任务执行出错");
-    } finally {
-      setIsWorking(false);
-      setEmployees((prev) =>
-        prev.map((e) =>
-          targetEmployees.find((t) => t.id === e.id)
-            ? { ...e, status: "active" }
-            : e,
-        ),
-      );
-    }
-  };
-
-  // Employee options for BossCommandBar
-  const employeeOptions: EmployeeOption[] = employees.map((e) => ({
-    id: e.id,
-    name: e.name,
-    role: e.role,
-    status: e.status,
-    isActive: e.isActive,
-  }));
 
   // All employees for sub-employee linking
   const allEmployeesSimple = employees.map((e) => ({
@@ -434,24 +311,6 @@ export default function EmployeesPage() {
         onOpenChange={setAddDialogOpen}
         onAdd={handleAddEmployee}
       />
-
-      {/* Boss Command Bar */}
-      {employees.length > 0 && (
-        <BossCommandBar
-          employees={employeeOptions}
-          onDispatch={handleBossDispatch}
-          isWorking={isWorking}
-        />
-      )}
-
-      {/* Dispatch Results Panel */}
-      {dispatchResults.length > 0 && (
-        <BossResultPanel
-          results={dispatchResults}
-          command={lastCommand}
-          onClose={() => setDispatchResults([])}
-        />
-      )}
     </div>
   );
 }

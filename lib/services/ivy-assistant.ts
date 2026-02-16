@@ -63,9 +63,7 @@ interface IvySummaryResult {
  * Ivy 扫描并总结日志
  * 这是 Ivy 的核心功能：读取未处理日志 → AI 分析总结 → 生成通知
  */
-export async function ivyScanAndSummarize(
-  companyId: string,
-): Promise<
+export async function ivyScanAndSummarize(companyId: string): Promise<
   | {
       success: true;
       processedCount: number;
@@ -137,7 +135,11 @@ export async function ivyScanAndSummarize(
     }
 
     // 5. 调用 AI 进行分析
-    const agent = getMastraAgent("assistant", modelName, IVY_SYSTEM_PROMPT);
+    const agent = await getMastraAgent(
+      "assistant",
+      modelName,
+      IVY_SYSTEM_PROMPT,
+    );
     const result = await agent.generate(userPrompt);
 
     // 6. 解析 AI 输出

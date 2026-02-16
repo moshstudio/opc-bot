@@ -33,7 +33,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { v4 as uuidv4 } from "uuid";
+import { nanoid } from "nanoid";
 
 // ─── Provider Metadata ─────────────────────────────────────
 const PROVIDERS = [
@@ -203,7 +203,7 @@ export function ModelDialog({ model, trigger }: ModelDialogProps) {
       });
     } else {
       addModel({
-        id: uuidv4(),
+        id: nanoid(),
         name: values.name,
         provider: values.provider,
         category: values.category,
