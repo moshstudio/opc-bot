@@ -26,7 +26,7 @@ import { WorkflowNodeTypes } from "./WorkflowNodeTypes";
 import { NODE_THEMES, type NodeTheme } from "./nodeTypeConfig";
 import { useModelContext } from "@/components/ModelContext";
 import { Button } from "@/components/ui/button";
-import { Play, Loader2, Save, Plus } from "lucide-react";
+import { Play, Loader2, Save, Plus, Terminal } from "lucide-react";
 import { toast } from "sonner";
 import {
   WorkflowDefinition,
@@ -173,12 +173,13 @@ function WorkflowCanvasContent({
       const theme = NODE_THEMES[type] || NODE_THEMES.process;
 
       const newNode: Node = {
-        id: nanoid(),
+        id: nanoid(6),
         type,
         position,
         data: {
           label: theme.defaultLabel,
           status: "idle",
+          ...(theme.defaultData || {}),
         },
       };
 
@@ -208,7 +209,7 @@ function WorkflowCanvasContent({
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id);
-    setTestDrawerOpen(false);
+    // setTestDrawerOpen(false); // 保持测试抽屉开启，方便查看
     setAddPanelOpen(false);
   }, []);
 
@@ -252,14 +253,15 @@ function WorkflowCanvasContent({
 
   const handleCreateNode = useCallback(
     (type: string, data: any) => {
+      const theme = NODE_THEMES[type] || NODE_THEMES.process;
       const newNode: Node = {
-        id: nanoid(),
+        id: nanoid(6),
         type,
         position: {
           x: Math.random() * 500 + 150,
           y: Math.random() * 500 + 150,
         },
-        data: { label: data.label, ...data },
+        data: { label: data.label, ...(theme.defaultData || {}), ...data },
       };
       const newNodes = nodes.concat(newNode);
       setNodes(newNodes);
@@ -474,6 +476,8 @@ function WorkflowCanvasContent({
               return EDGE_COLORS[theme.color] || "#94a3b8";
             }}
             maskColor='rgba(148, 163, 184, 0.1)'
+            pannable
+            zoomable
           />
         )}
 
@@ -541,6 +545,18 @@ function WorkflowCanvasContent({
             )}
             测试运行
           </Button>
+          {!testDrawerOpen && testResult && !isExecuting && (
+            <Button
+              onClick={() => setTestDrawerOpen(true)}
+              variant='secondary'
+              size='sm'
+              className='shadow-lg'
+              title='查看上次运行结果'
+            >
+              <Terminal className='w-4 h-4 mr-2' />
+              运行结果
+            </Button>
+          )}
           <Button
             onClick={handleSave}
             className='bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20'
@@ -564,6 +580,13 @@ function WorkflowCanvasContent({
           </Button>
         </Panel>
       </ReactFlow>
+
+      <TestRunDrawer
+        isOpen={testDrawerOpen}
+        onClose={() => setTestDrawerOpen(false)}
+        result={testResult}
+        isRunning={isExecuting}
+      />
 
       {/* Add Node Panel */}
       <AddNodePanel
@@ -603,13 +626,6 @@ function WorkflowCanvasContent({
         onOpenChange={setTestDialogOpen}
         nodes={nodes as any as WorkflowNode[]}
         onRun={executeWorkflowTest}
-      />
-
-      <TestRunDrawer
-        isOpen={testDrawerOpen}
-        onClose={() => setTestDrawerOpen(false)}
-        result={testResult}
-        isRunning={isExecuting}
       />
     </div>
   );

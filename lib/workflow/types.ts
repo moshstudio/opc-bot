@@ -115,6 +115,13 @@ export interface WorkflowNodeData {
     | "js_expression";
   conditionValue?: string;
   conditionVariable?: string;
+  conditions?: {
+    id: string;
+    variable: string;
+    operator: string;
+    value: string;
+  }[];
+  logicalOperator?: "AND" | "OR";
 
   // 迭代 / 循环
   iterationVariable?: string;
@@ -130,6 +137,7 @@ export interface WorkflowNodeData {
   // 代码节点
   codeLanguage?: "javascript";
   codeContent?: string;
+  variables?: Record<string, string>; // Input variables mapping for code node
 
   // 模板节点 (template_transform / text_template)
   templateContent?: string;

@@ -57,7 +57,7 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
     if (node) {
       const newNode = {
         ...node,
-        id: nanoid(),
+        id: nanoid(6),
         position: { x: node.position.x + 40, y: node.position.y + 40 },
         selected: false,
       };

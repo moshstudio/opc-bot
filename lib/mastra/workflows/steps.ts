@@ -159,6 +159,40 @@ export const knowledgeRetrievalStep = createStep({
 });
 
 /**
+ * 从 LLM 文本响应中提取 JSON，处理 markdown 代码块包裹的情况
+ */
+function extractJsonFromText(text: string): any | null {
+  // 首先尝试直接解析
+  try {
+    return JSON.parse(text);
+  } catch {
+    // 忽略，尝试其他方式
+  }
+
+  // 尝试提取 markdown 代码块中的 JSON
+  const codeBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1].trim());
+    } catch {
+      // 忽略
+    }
+  }
+
+  // 尝试从文本中找到 JSON 对象
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch {
+      // 忽略
+    }
+  }
+
+  return null;
+}
+
+/**
  * Agent 分析 Step (支持结构化输出)
  */
 export const agentStep = createStep({
@@ -195,32 +229,168 @@ export const agentStep = createStep({
       `[Step:agent_process] Using agent: ${agent?.name || "unknown"}`,
     );
 
-    let finalPrompt = inputData.prompt;
-    if (inputData.outputSchema) {
-      finalPrompt += `\n\n**必须按以下 JSON 格式输出：**\n${inputData.outputSchema}`;
-    }
+    const finalPrompt = inputData.prompt;
 
     console.log("[Step:agent_process] Calling agent.generate...");
     const context = inputData.input?.output ?? inputData.input;
-    const result = await agent.generate(
-      `上下文内容：\n${typeof context === "string" ? context : JSON.stringify(context)}\n\n指令：${finalPrompt}`,
-    );
+    const messageContent = `上下文内容：\n${typeof context === "string" ? context : JSON.stringify(context)}\n\n指令：${finalPrompt}`;
+
+    // 当定义了 outputSchema 时，使用 structuredOutput 功能强制结构化输出
+    if (inputData.outputSchema) {
+      let jsonSchema: any;
+      try {
+        jsonSchema = JSON.parse(inputData.outputSchema);
+      } catch {
+        jsonSchema = null;
+        console.warn(
+          "[Step:agent_process] Failed to parse outputSchema as JSON",
+        );
+      }
+
+      if (jsonSchema) {
+        try {
+          console.log(
+            "[Step:agent_process] Using structuredOutput with JSON Schema:",
+            JSON.stringify(jsonSchema),
+          );
+
+          const result = await agent.generate(messageContent, {
+            structuredOutput: {
+              schema: jsonSchema,
+            },
+          });
+
+          // result.object 可能是 Promise（MastraModelOutput getter），需要 await
+          let structuredData: any;
+          try {
+            const objValue = (result as any).object;
+            structuredData =
+              objValue instanceof Promise ? await objValue : objValue;
+          } catch (objErr) {
+            console.warn(
+              "[Step:agent_process] Failed to get result.object:",
+              objErr,
+            );
+            structuredData = null;
+          }
+
+          // result.text 在 FullOutput 类型中是 string，但运行时可能是 Promise getter
+          let textValue: string;
+          try {
+            const rawText = result.text as any;
+            textValue =
+              rawText && typeof rawText.then === "function"
+                ? await rawText
+                : rawText;
+          } catch {
+            textValue = "";
+          }
+
+          console.log(
+            "[Step:agent_process] structuredData:",
+            JSON.stringify(structuredData),
+          );
+          console.log(
+            "[Step:agent_process] textValue (first 200 chars):",
+            textValue?.substring(0, 200),
+          );
+
+          if (structuredData && typeof structuredData === "object") {
+            // 直接返回结构化数据的各字段作为输出
+            return {
+              ...structuredData,
+              output: structuredData,
+              text: textValue,
+            };
+          }
+
+          // 如果 object 为空但有 text，尝试从 text 中提取 JSON
+          if (textValue) {
+            const parsed = extractJsonFromText(textValue);
+            if (parsed && typeof parsed === "object") {
+              return {
+                ...parsed,
+                output: parsed,
+                text: textValue,
+              };
+            }
+          }
+
+          return { output: textValue || "" };
+        } catch (generateError: any) {
+          console.warn(
+            "[Step:agent_process] structuredOutput generate failed, falling back to prompt injection:",
+            generateError?.message,
+          );
+          // 结构化输出失败，降级到 prompt 注入方式
+        }
+      }
+
+      // 降级：通过 prompt 注入方式引导 LLM 输出 JSON
+      const fallbackPrompt =
+        messageContent +
+        `\n\n**重要：你必须严格按以下 JSON Schema 格式输出，不要包含任何其他内容和 markdown 代码块：**\n${inputData.outputSchema}`;
+      const result = await agent.generate(fallbackPrompt);
+
+      let textValue: string;
+      try {
+        const rawText = result.text as any;
+        textValue =
+          rawText && typeof rawText.then === "function"
+            ? await rawText
+            : rawText;
+      } catch {
+        textValue = "";
+      }
+
+      console.log(
+        "[Step:agent_process] Fallback response (first 200 chars):",
+        textValue?.substring(0, 200),
+      );
+
+      const parsed = extractJsonFromText(textValue);
+      if (parsed && typeof parsed === "object") {
+        return {
+          ...parsed,
+          output: parsed,
+          text: textValue,
+        };
+      }
+
+      return { output: textValue };
+    }
+
+    // 没有 outputSchema 时，普通文本生成
+    const result = await agent.generate(messageContent);
+
+    let textValue: string;
+    try {
+      const rawText = result.text as any;
+      textValue =
+        rawText && typeof rawText.then === "function" ? await rawText : rawText;
+    } catch {
+      textValue = "";
+    }
+
     console.log("[Step:agent_process] Agent response received");
 
-    try {
-      const output = JSON.parse(result.text);
+    const parsed = extractJsonFromText(textValue);
+    if (parsed && typeof parsed === "object") {
       return {
-        output,
-        text: result.text,
-      };
-    } catch {
-      return {
-        output: result.text,
+        output: parsed,
+        text: textValue,
       };
     }
+
+    return {
+      output: textValue,
+    };
   },
 });
 
+/**
+ * 代码执行 Step
+ */
 /**
  * 代码执行 Step
  */
@@ -229,21 +399,45 @@ export const codeStep = createStep({
   inputSchema: z.object({
     code: z.string(),
     input: z.any(),
+    variables: z.record(z.string()).optional(),
     companyId: z.string().optional(),
   }),
   outputSchema: z.any(),
   execute: async ({ inputData }) => {
     try {
-      const fn = new Function(
-        "input",
+      // 1. 准备上下文参数
+      const context = {
+        input: inputData.input,
+        vars: inputData.variables || {},
+      };
+
+      // 2. 构造执行函数 (支持 main 函数入口)
+      // 使用 AsyncFunction 以支持用户代码中的 await
+      const AsyncFunction = Object.getPrototypeOf(
+        async function () {},
+      ).constructor;
+
+      const fn = new AsyncFunction(
+        "context",
         `
-        const output = (function() {
-          ${inputData.code}
-        })();
-        return output;
-      `,
+        const { input, vars } = context;
+        
+        // 用户代码
+        ${inputData.code}
+        
+        // 检查是否定义了 main 函数
+        if (typeof main === 'function') {
+          return await main({ input, vars });
+        }
+        
+        // 如果没有 main 函数，理论上应该报错或返回 undefined
+        // 这里为了兼容性，如果不定义 main，什么都不做
+        return undefined;
+        `,
       );
-      const result = fn(inputData.input);
+
+      // 3. 执行
+      const result = await fn(context);
       return { output: result };
     } catch (error: any) {
       throw new Error(`Code execution failed: ${error.message}`);
@@ -355,5 +549,61 @@ export const conditionStep = createStep({
       console.error("Condition evaluation failed:", e);
       return { result: false };
     }
+  },
+});
+/**
+ * 变量聚合 Step
+ */
+export const variableAggregatorStep = createStep({
+  id: "variable_aggregator",
+  inputSchema: z.object({
+    aggregateVariables: z.array(z.string()).optional(),
+    aggregateStrategy: z
+      .enum(["concat", "merge", "array"])
+      .optional()
+      .default("concat"),
+  }),
+  outputSchema: z.any(),
+  execute: async ({ inputData, getStepResult }) => {
+    const vars = inputData.aggregateVariables || [];
+    const strategy = inputData.aggregateStrategy || "concat";
+
+    const rawValues = vars.map((nodeId) => {
+      const result = getStepResult(nodeId) as any;
+      // 兼容 output/data/result 以及直接结果
+      return result?.output ?? result?.data ?? result?.result ?? result;
+    });
+
+    let finalOutput: any;
+    switch (strategy) {
+      case "array":
+        // 直接返回数组，包含原始对象，避免二次 Stringify 导致转义爆炸
+        finalOutput = rawValues;
+        break;
+      case "merge":
+        // 紧凑合并
+        finalOutput = rawValues
+          .map((v) =>
+            typeof v === "object" && v !== null
+              ? JSON.stringify(v)
+              : String(v ?? ""),
+          )
+          .join("");
+        break;
+      case "concat":
+      default:
+        // 换行拼接
+        finalOutput = rawValues
+          .map((v) =>
+            typeof v === "object" && v !== null
+              ? JSON.stringify(v)
+              : String(v ?? ""),
+          )
+          .join("\n");
+    }
+
+    return {
+      output: finalOutput,
+    };
   },
 });

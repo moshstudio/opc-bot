@@ -126,7 +126,7 @@ const ROLE_TEMPLATES: Record<
           position: { x: 650, y: 200 },
           data: {
             label: "信息汇总",
-            aggregateStrategy: "concat",
+            aggregateStrategy: "array",
             aggregateVariables: ["node-2", "node-3", "node-4"],
           },
         },
@@ -138,19 +138,84 @@ const ROLE_TEMPLATES: Record<
             label: "AI 分析总结",
             prompt:
               "你现在是 AI 助理艾薇。请分析以下提供的一人公司运行数据（包含日志、执行结果和通知），提取核心成果、警告和错误。请以温暖、专业的语气生成一份工作概览。输出要求：必须包含 JSON 字段 hasNotableItems, summary, items。",
-            outputSchema:
-              '{"hasNotableItems": "boolean", "summary": "string", "items": "array"}',
+            outputSchema: JSON.stringify({
+              type: "object",
+              properties: {
+                hasNotableItems: {
+                  type: "boolean",
+                  description: "Whether there are notable items to report",
+                },
+                summary: {
+                  type: "string",
+                  description: "A concise summary of the daily work",
+                },
+                items: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "List of key achievements, warnings, or errors",
+                },
+              },
+              required: ["hasNotableItems", "summary", "items"],
+            }),
+          },
+        },
+        {
+          id: "node-check",
+          type: "condition",
+          position: { x: 1250, y: 200 },
+          data: {
+            label: "检查重要事项",
+            logicalOperator: "AND",
+            conditions: [
+              {
+                id: "c1",
+                variable: "node-6.hasNotableItems",
+                operator: "equals",
+                value: "true",
+              },
+            ],
+          },
+        },
+        {
+          id: "node-format",
+          type: "code",
+          position: { x: 1550, y: 100 },
+          data: {
+            label: "格式化日报",
+            codeLanguage: "javascript",
+            codeContent: `async function main({ summary, items }) {
+  const itemList = Array.isArray(items)
+    ? items.map((i) => '- ' + i).join('\\n')
+    : '- 无重点事项';
+  return {
+    result: '### 工作概览\\n' + summary + '\\n\\n### 重点事项\\n' + itemList
+  };
+}`,
+            codeContentPython: `def main(summary: str, items: list) -> dict:
+    item_list = '\\n'.join(['- ' + i for i in items]) if items else '- 无重点事项'
+    return {
+        'result': f'### 工作概览\\n{summary}\\n\\n### 重点事项\\n{item_list}'
+    }`,
+            variables: {
+              summary: "{{node-6.summary}}",
+              items: "{{node-6.items}}",
+            },
+            outputVariables: [{ name: "result", type: "string" }],
+            retryCount: 0,
+            retryInterval: 1000,
+            timeout: 10000,
+            errorHandling: "fail",
           },
         },
         {
           id: "node-7",
           type: "notification",
-          position: { x: 1250, y: 200 },
+          position: { x: 1850, y: 100 },
           data: {
             label: "发送日报",
             notificationType: "both",
             subject: "艾薇 · 每日工作动态总结",
-            content: "您好，这是过去 24 小时的工作汇总：\n\n{{node-6}}",
+            content: "{{node-format}}",
           },
         },
       ],
@@ -162,7 +227,14 @@ const ROLE_TEMPLATES: Record<
         { id: "e3-5", source: "node-3", target: "node-5" },
         { id: "e4-5", source: "node-4", target: "node-5" },
         { id: "e5-6", source: "node-5", target: "node-6" },
-        { id: "e6-7", source: "node-6", target: "node-7" },
+        { id: "e6-check", source: "node-6", target: "node-check" },
+        {
+          id: "check-format",
+          source: "node-check",
+          target: "node-format",
+          sourceHandle: "true",
+        },
+        { id: "format-7", source: "node-format", target: "node-7" },
       ],
     },
   },
@@ -250,8 +322,36 @@ const ROLE_TEMPLATES: Record<
           data: {
             label: "脚本生成",
             desc: "自动编写 K8s 部署脚本",
-            codeContent:
-              "return `// 执行脚本\\nkubectl apply -f config.yaml // 基于: ${input}`",
+            codeLanguage: "javascript",
+            codeContent: `async function main({ riskAssessment }) {
+  // 根据风险评估结果生成 K8s 部署脚本
+  const script = [
+    '#!/bin/bash',
+    '# 自动生成的部署脚本',
+    '# 基于风险评估: ' + (typeof riskAssessment === 'string' ? riskAssessment.slice(0, 50) : 'N/A'),
+    '',
+    'kubectl apply -f config.yaml',
+    'kubectl rollout status deployment/app',
+  ].join('\\n');
+  return { result: script };
+}`,
+            codeContentPython: `def main(riskAssessment: str) -> dict:
+    # 根据风险评估结果生成 K8s 部署脚本
+    script = """#!/bin/bash
+# 自动生成的部署脚本
+# 基于风险评估: {assessment}
+
+kubectl apply -f config.yaml
+kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] if riskAssessment else 'N/A')
+    return {'result': script}`,
+            variables: {
+              riskAssessment: "{{node-2}}",
+            },
+            outputVariables: [{ name: "result", type: "string" }],
+            retryCount: 0,
+            retryInterval: 1000,
+            timeout: 10000,
+            errorHandling: "fail",
           },
         },
         {

@@ -63,6 +63,8 @@ export interface NodeTheme {
   allowTimeout?: boolean;
   /** 是否在节点上显示执行计划（仅定时触发使用） */
   showSchedule?: boolean;
+  /** 默认配置数据 */
+  defaultData?: Record<string, any>;
 }
 
 /** 模型提供商图标映射 */
@@ -239,10 +241,33 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     gradientPair: "pink",
     tab: "node",
     menuLabel: "代码执行",
-    menuDesc: "运行自定义 JavaScript 代码",
+    menuDesc: "运行自定义 Python / JavaScript 代码",
     needsDialog: true,
     allowRetry: true,
     allowTimeout: true,
+    defaultData: {
+      codeLanguage: "javascript",
+      codeContent: `async function main({ input, vars }) {
+  // 在这里编写你的处理逻辑
+  const result = input.toUpperCase();
+  return {
+    result: result,
+  };
+}`,
+      codeContentPython: `def main(input: str, vars: dict) -> dict:
+    # 在这里编写你的处理逻辑
+    result = input.upper()
+    return {
+        "result": result,
+    }`,
+      variables: {},
+      outputVariables: [{ name: "result", type: "string" }],
+      retryCount: 0,
+      retryInterval: 1000,
+      timeout: 30000,
+      errorHandling: "fail", // "fail" | "default_value" | "continue"
+      errorDefaultValue: "",
+    },
   },
   template_transform: {
     typeLabel: "模板转换",
@@ -394,6 +419,10 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     menuLabel: "发送通知",
     menuDesc: "发送站内信或邮件通知",
     needsDialog: true,
+    defaultData: {
+      subject: "工作汇总通知",
+      content: "您好，这是过去 24 小时的工作汇总：\n\n{{node-6}}",
+    },
   },
   marketplace: {
     typeLabel: "市场",

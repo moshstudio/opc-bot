@@ -58,6 +58,8 @@ export async function executeMastraWorkflow(
         return steps.notificationStep;
       case "condition":
         return steps.conditionStep;
+      case "variable_aggregator":
+        return steps.variableAggregatorStep;
       default:
         console.warn(
           `[Mastra] Unknown node type: ${node.type}, using startStep`,
@@ -137,6 +139,61 @@ export async function executeMastraWorkflow(
 
             if (incomingData.output && !mergedInput.input) {
               mergedInput.input = incomingData.output;
+            }
+
+            // Resolve variables in string inputs and 'variables' object
+            // We use a helper to look up {{nodeId}} references using getStepResult
+            for (const key of Object.keys(mergedInput)) {
+              if (typeof mergedInput[key] === "string") {
+                mergedInput[key] = resolveVariables(
+                  mergedInput[key],
+                  params.getStepResult,
+                  mergedInput,
+                );
+              } else if (
+                key === "variables" &&
+                typeof mergedInput[key] === "object" &&
+                mergedInput[key] !== null
+              ) {
+                // Special handling for 'variables' map in code node
+                for (const varKey of Object.keys(mergedInput[key])) {
+                  const val = mergedInput[key][varKey];
+                  if (typeof val === "string") {
+                    // Check for exact match {{key}} to preserve object type
+                    const exactMatch = val.match(/^\{\{([\w.-]+)\}\}$/);
+                    if (exactMatch) {
+                      const refKey = exactMatch[1];
+                      if (refKey === "input") {
+                        mergedInput[key][varKey] = mergedInput.input;
+                      } else {
+                        const stepRes = params.getStepResult(refKey);
+                        // If we can Resolve property access here if needed, but for now assume StepID
+                        // Mastra getStepResult might not handle dot notation.
+                        // If it fails, we should fall back or handle dots manually?
+                        // Let's assume strict node ID for now to pass Objects.
+                        if (stepRes !== undefined) {
+                          mergedInput[key][varKey] =
+                            (stepRes as any)?.output ?? stepRes; // Unpack output if standard
+                        } else {
+                          // Try standard interpolation as fallback (e.g. if it's a property path not a step id)
+                          mergedInput[key][varKey] = resolveVariables(
+                            val,
+                            params.getStepResult,
+                            mergedInput,
+                          );
+                        }
+                      }
+                    } else {
+                      // Mixed string content
+                      mergedInput[key][varKey] = resolveVariables(
+                        val,
+                        params.getStepResult,
+                        mergedInput,
+                      );
+                    }
+                  }
+                }
+              }
             }
 
             return baseStep.execute({
@@ -286,3 +343,28 @@ export const workflow = createWorkflow({
 });
 
 export * from "./parallel";
+
+function resolveVariables(
+  content: string,
+  getStepResult: (stepId: string) => any,
+  contextData: any,
+): string {
+  if (!content) return content;
+  return content.replace(/\{\{([\w.-]+)\}\}/g, (match, key) => {
+    if (key === "input") {
+      const val = contextData.input;
+      return typeof val === "string" ? val : JSON.stringify(val);
+    }
+    const stepResult = getStepResult(key);
+    if (stepResult) {
+      const val =
+        stepResult?.output ??
+        stepResult?.data ??
+        stepResult?.result ??
+        stepResult;
+      if (val === undefined || val === null) return "";
+      return typeof val === "object" ? JSON.stringify(val) : String(val);
+    }
+    return match;
+  });
+}

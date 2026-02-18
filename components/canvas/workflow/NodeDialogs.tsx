@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { NODE_THEMES } from "./nodeTypeConfig";
 import {
   Bot,
   Users,
@@ -28,6 +29,13 @@ import {
   Search,
   Bell,
 } from "lucide-react";
+import SimpleCodeEditor from "react-simple-code-editor";
+import Prism from "prismjs";
+import "prismjs/components/prism-javascript";
+import "prismjs/themes/prism-dark.css";
+// Don't forget to install types: npm i --save-dev @types/prismjs
+import { VariablePicker } from "./VariablePicker";
+
 import { generateCron } from "@/lib/workflow/cron-utils";
 import { CronConfigurator, CronConfigData } from "./CronConfigurator";
 import { SchemaBuilder } from "./SchemaBuilder";
@@ -88,11 +96,16 @@ export function NodeDialogs({
     queryEmployeeId: "all",
     queryIncludeProcessed: false,
   });
-  const [notificationForm, setNotificationForm] = useState({
-    label: "发送通知",
-    notificationType: "site" as "site" | "email" | "both",
-    subject: "艾薇 · 报告摘要",
-    content: "发现以下值得关注的事项：\n{{llm-node}}",
+  const [notificationForm, setNotificationForm] = useState(() => {
+    const defaults = NODE_THEMES.notification.defaultData;
+    return {
+      label: "发送通知",
+      notificationType: "site" as "site" | "email" | "both",
+      subject: (defaults?.subject as string) || "艾薇 · 报告摘要",
+      content:
+        (defaults?.content as string) ||
+        "发现以下值得关注的事项：\n{{llm-node}}",
+    };
   });
   const [processForm, setProcessForm] = useState({
     label: "AI 处理",
@@ -113,10 +126,30 @@ export function NodeDialogs({
     httpUrl: "",
     httpBody: "",
   });
-  const [codeForm, setCodeForm] = useState({
+  const [codeForm, setCodeForm] = useState<{
+    label: string;
+    codeContent: string;
+    variables: { key: string; value: string }[];
+  }>({
     label: "代码处理",
-    codeContent:
-      "// input: 上一节点的输出\n// variables: 所有节点变量\nreturn input;",
+    codeContent: `/**
+ * @param {Object} args
+ * @param {Object} args.input - 上一节点的输出
+ * @param {Object} args.vars - 输入变量 (见下方配置)
+ * @returns {any} - 节点输出结果
+ */
+async function main({ input, vars }) {
+  // 示例: 获取上一节点的结果并转大写
+  // const str = typeof input === 'string' ? input : JSON.stringify(input);
+  // return str.toUpperCase();
+  
+  return {
+    rawInput: input,
+    processed: true,
+    timestamp: Date.now()
+  };
+}`,
+    variables: [],
   });
   const [templateForm, setTemplateForm] = useState({
     label: "文本模板",
@@ -217,7 +250,7 @@ export function NodeDialogs({
             <div className='space-y-2'>
               <Label>Webhook URL</Label>
               <div className='p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono break-all text-slate-500'>
-                {`https://api.opc-bot.com/v1/webhooks/workflow/${nanoid()}`}
+                {`https://api.opc-bot.com/v1/webhooks/workflow/${nanoid(6)}`}
               </div>
               <p className='text-[10px] text-muted-foreground'>
                 向此 URL 发送 POST 请求以触发工作流。
@@ -1023,7 +1056,7 @@ export function NodeDialogs({
               </DialogTitle>
             </DialogHeader>
             <p className='text-rose-50/80 text-sm mt-2'>
-              编写 JavaScript 脚本进行复杂的数据处理或逻辑转换
+              编写 Python / JavaScript 脚本进行复杂的数据处理或逻辑转换
             </p>
           </div>
 
@@ -1042,30 +1075,182 @@ export function NodeDialogs({
               />
             </div>
 
+            <div className='flex flex-col gap-2 max-h-[160px] overflow-y-auto'>
+              <Label className='text-xs font-semibold text-slate-500 uppercase tracking-wider flex justify-between items-center'>
+                <span>输入变量 (Vars)</span>
+                <Button
+                  variant='ghost'
+                  size='sm'
+                  onClick={() => {
+                    // Smart variable name: use common names, append _N for duplicates
+                    const existingKeys = new Set(
+                      codeForm.variables.map((v) => v.key),
+                    );
+                    const candidates = [
+                      "arg",
+                      "text",
+                      "data",
+                      "result",
+                      "input",
+                      "content",
+                      "value",
+                    ];
+                    let newKey = "";
+                    for (const name of candidates) {
+                      if (!existingKeys.has(name)) {
+                        newKey = name;
+                        break;
+                      }
+                    }
+                    if (!newKey) {
+                      const baseName = "arg";
+                      let suffix = 1;
+                      while (existingKeys.has(`${baseName}_${suffix}`))
+                        suffix++;
+                      newKey = `${baseName}_${suffix}`;
+                    }
+                    setCodeForm({
+                      ...codeForm,
+                      variables: [
+                        ...codeForm.variables,
+                        { key: newKey, value: "" },
+                      ],
+                    });
+                  }}
+                  className='h-6 text-[10px] text-rose-500 hover:text-rose-600 hover:bg-rose-50'
+                >
+                  + 添加变量
+                </Button>
+              </Label>
+
+              {codeForm.variables.length === 0 && (
+                <div className='text-[10px] text-slate-400 text-center py-2 border border-dashed border-slate-200 rounded-lg'>
+                  暂无变量，点击上方添加
+                </div>
+              )}
+
+              {codeForm.variables.map((variable, index) => (
+                <div
+                  key={index}
+                  className='grid grid-cols-[1fr_1.5fr_24px] gap-2 items-center'
+                >
+                  <Input
+                    placeholder='变量名 (key)'
+                    value={variable.key}
+                    onChange={(e) => {
+                      const newVars = [...codeForm.variables];
+                      newVars[index].key = e.target.value;
+                      setCodeForm({ ...codeForm, variables: newVars });
+                    }}
+                    className='h-8 text-xs rounded-lg'
+                  />
+                  <div className='relative'>
+                    <Input
+                      placeholder='值 (支持 {{node-id}})'
+                      value={variable.value}
+                      onChange={(e) => {
+                        const newVars = [...codeForm.variables];
+                        newVars[index].value = e.target.value;
+                        setCodeForm({ ...codeForm, variables: newVars });
+                      }}
+                      className='h-8 text-xs rounded-lg pr-8'
+                    />
+                    <div className='absolute right-1 top-1/2 -translate-y-1/2 flex'>
+                      <VariablePicker
+                        onSelect={(v) => {
+                          const newVars = [...codeForm.variables];
+                          const newValue = `{{${v.value}}}`;
+                          newVars[index].value = newValue;
+
+                          // Auto-derive key if current key is empty or a default name
+                          const currentKey = newVars[index].key;
+                          const isDefaultKey =
+                            !currentKey ||
+                            /^(arg|text|data|result|input|content|value)(_\d+)?$/.test(
+                              currentKey,
+                            );
+                          if (isDefaultKey) {
+                            let derivedKey = v.value.includes(".")
+                              ? v.value.split(".").pop() || currentKey
+                              : v.label || "output";
+                            // Ensure valid identifier
+                            derivedKey =
+                              derivedKey
+                                .replace(/[^a-zA-Z0-9_$]/g, "_")
+                                .replace(/^_+|_+$/g, "") || "output";
+                            // Deduplicate
+                            const otherKeys = new Set(
+                              newVars
+                                .filter((_, i) => i !== index)
+                                .map((v) => v.key),
+                            );
+                            if (otherKeys.has(derivedKey)) {
+                              let suffix = 1;
+                              while (otherKeys.has(`${derivedKey}_${suffix}`))
+                                suffix++;
+                              derivedKey = `${derivedKey}_${suffix}`;
+                            }
+                            newVars[index].key = derivedKey;
+                          }
+
+                          setCodeForm({ ...codeForm, variables: newVars });
+                        }}
+                        upstreamVariables={[]} // Dialog might not have full context of upstream nodes easily without props drilling
+                        // For now, we might need to pass upstreamVariables to NodeDialogs or just allow manual entry + basic system vars
+                      />
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newVars = codeForm.variables.filter(
+                        (_, i) => i !== index,
+                      );
+                      setCodeForm({ ...codeForm, variables: newVars });
+                    }}
+                    className='text-slate-400 hover:text-red-500 transition-colors'
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+
             <div className='space-y-2'>
               <Label className='text-xs font-semibold text-slate-500 uppercase tracking-wider'>
                 JavaScript 代码
               </Label>
-              <textarea
-                className='flex min-h-[160px] w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm font-mono text-emerald-400 focus:ring-2 focus:ring-rose-500/20 transition-shadow'
-                value={codeForm.codeContent}
-                onChange={(e) =>
-                  setCodeForm({ ...codeForm, codeContent: e.target.value })
-                }
-              />
+              <div className='min-h-[200px] rounded-xl border border-slate-800 bg-slate-950 overflow-hidden text-sm font-mono leading-relaxed relative group'>
+                <SimpleCodeEditor
+                  value={codeForm.codeContent}
+                  onValueChange={(code: string) =>
+                    setCodeForm({ ...codeForm, codeContent: code })
+                  }
+                  highlight={(code: string) =>
+                    Prism.highlight(
+                      code,
+                      Prism.languages.javascript,
+                      "javascript",
+                    )
+                  }
+                  padding={16}
+                  className='min-h-[200px] font-mono text-xs text-emerald-400'
+                  textareaClassName='focus:outline-none'
+                  style={{
+                    fontFamily: '"Fira Code", "Fira Mono", monospace',
+                    fontSize: 12,
+                    backgroundColor: "#020617", // slate-950
+                    color: "#34d399", // emerald-400
+                  }}
+                />
+              </div>
             </div>
 
             <div className='p-3 rounded-xl bg-slate-900 border border-slate-800'>
               <p className='text-[10px] text-slate-400 font-mono leading-relaxed'>
                 <span className='text-rose-400'>{"// 环境说明:"}</span>
                 <br />
-                const input ={" "}
-                <span className='text-emerald-400'>上一节点输出</span>
-                ;
                 <br />
-                const variables ={" "}
-                <span className='text-emerald-400'>工作流全局变量</span>
-                ;
+                async function main({"{"} input, vars {"}"}) {"{"} ... {"}"}
                 <br />
                 <span className='text-blue-400'>return</span> 最终结果;
               </p>
@@ -1073,8 +1258,15 @@ export function NodeDialogs({
 
             <Button
               onClick={() => {
+                // Convert array to record for storage
+                const variablesRecord: Record<string, string> = {};
+                codeForm.variables.forEach((v) => {
+                  if (v.key) variablesRecord[v.key] = v.value;
+                });
+
                 onCreateNode("code", {
                   ...codeForm,
+                  variables: variablesRecord,
                   codeLanguage: "javascript",
                 });
                 setActiveDialog(null);

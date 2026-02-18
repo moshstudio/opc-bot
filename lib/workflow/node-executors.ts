@@ -198,10 +198,6 @@ export const processExecutor: NodeExecutor = {
 
     let systemPrompt = data.prompt || context.employeeConfig?.prompt || "";
 
-    if (data.outputSchema) {
-      systemPrompt += `\n\n**重要：必须按以下 JSON Schema 格式输出结果：**\n${data.outputSchema}`;
-    }
-
     systemPrompt = interpolateVariables(systemPrompt, context.variables);
 
     const previousOutput = getLastOutput(context);
@@ -219,7 +215,27 @@ export const processExecutor: NodeExecutor = {
 
     for (let attempt = 0; attempt <= retryCount; attempt++) {
       try {
-        const generatePromise = agent.generate(input);
+        let generatePromise;
+
+        // 当定义了 outputSchema 时，使用 structuredOutput 强制结构化输出
+        if (data.outputSchema) {
+          try {
+            const jsonSchema = JSON.parse(data.outputSchema);
+            generatePromise = agent.generate(input, {
+              structuredOutput: {
+                schema: jsonSchema,
+              },
+            });
+          } catch {
+            // outputSchema 解析失败，回退到 prompt 注入
+            const promptWithSchema =
+              input +
+              `\n\n**必须按以下 JSON 格式输出：**\n${data.outputSchema}`;
+            generatePromise = agent.generate(promptWithSchema);
+          }
+        } else {
+          generatePromise = agent.generate(input);
+        }
 
         // Create a timeout promise that rejects
         const timeoutPromise = new Promise((_, reject) => {
@@ -232,6 +248,12 @@ export const processExecutor: NodeExecutor = {
           generatePromise,
           timeoutPromise,
         ]);
+
+        // 如果有结构化输出，优先使用 object
+        if (data.outputSchema && result.object) {
+          return JSON.stringify(result.object);
+        }
+
         return result.text;
       } catch (error: any) {
         console.warn(
@@ -298,6 +320,33 @@ export const outputExecutor: NodeExecutor = {
 // ===== 条件判断节点 =====
 export const conditionExecutor: NodeExecutor = {
   async execute(data, context) {
+    // 1. 新版多条件逻辑
+    if (
+      data.conditions &&
+      Array.isArray(data.conditions) &&
+      data.conditions.length > 0
+    ) {
+      const results = data.conditions.map((condition: any) => {
+        // 获取变量值（支持 node.field 写法）
+        let val = "";
+        if (condition.variable === "__input__") {
+          val = context.variables["__input__"] || "";
+        } else {
+          val = getVariableValue(context.variables, condition.variable);
+        }
+
+        return checkCondition(val, condition.operator, condition.value);
+      });
+
+      const logic = data.logicalOperator || "AND";
+      if (logic === "OR") {
+        return results.some(Boolean) ? "true" : "false";
+      } else {
+        return results.every(Boolean) ? "true" : "false";
+      }
+    }
+
+    // 2. 旧版单条件逻辑 (兼容)
     const previousOutput = getLastOutput(context);
     const valueToCheck = data.conditionVariable
       ? context.variables[data.conditionVariable] || ""
@@ -624,6 +673,88 @@ const executors: Record<WorkflowNodeType, NodeExecutor> = {
   text_template: textTemplateExecutor,
   message: messageExecutor,
 };
+
+// ==========================================
+// 辅助函数：变量访问与条件判断
+// ==========================================
+
+function getVariableValue(variables: Record<string, any>, path: string): any {
+  if (!path) return "";
+
+  // 1. 直接匹配 (如 "node-1")
+  if (variables[path] !== undefined) return variables[path];
+
+  // 2. 路径访问 (如 "node-1.summary")
+  const parts = path.split(".");
+  const nodeId = parts[0];
+  const rest = parts.slice(1);
+
+  // 获取节点输出
+  let current = variables[nodeId];
+
+  // 如果节点不存在，返回空
+  if (current === undefined) return "";
+
+  // 尝试解析 JSON 字符串
+  if (typeof current === "string") {
+    try {
+      if (current.trim().startsWith("{") || current.trim().startsWith("[")) {
+        current = JSON.parse(current);
+      }
+    } catch (e) {
+      // 解析失败则保留原字符串
+    }
+  }
+
+  // 递归访问属性
+  for (const part of rest) {
+    if (current && typeof current === "object" && current[part] !== undefined) {
+      current = current[part];
+    } else {
+      return ""; // 路径中断
+    }
+  }
+
+  // 返回最终值 (如果是对象则转回字符串)
+  return typeof current === "object"
+    ? JSON.stringify(current)
+    : String(current ?? "");
+}
+
+function checkCondition(
+  val: string,
+  operator: string,
+  target: string,
+): boolean {
+  switch (operator) {
+    case "contains":
+      return val.includes(target);
+    case "not_contains":
+      return !val.includes(target);
+    case "equals":
+      return val === target;
+    case "not_equals":
+      return val !== target;
+    case "start_with":
+      return val.startsWith(target);
+    case "end_with":
+      return val.endsWith(target);
+    case "is_empty":
+      return !val || val.trim().length === 0;
+    case "not_empty":
+      return !!val && val.trim().length > 0;
+    case "gt":
+      return Number(val) > Number(target);
+    case "gte":
+      return Number(val) >= Number(target);
+    case "lt":
+      return Number(val) < Number(target);
+    case "lte":
+      return Number(val) <= Number(target);
+    default:
+      return false;
+  }
+}
 
 export function getExecutor(nodeType: WorkflowNodeType): NodeExecutor {
   const executor = executors[nodeType];

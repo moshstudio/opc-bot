@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,29 +26,18 @@ interface SchemaBuilderProps {
 }
 
 export function SchemaBuilder({ initialSchema, onChange }: SchemaBuilderProps) {
-  const [mode, setMode] = useState<"builder" | "code">("builder");
-  const [fields, setFields] = useState<SchemaField[]>([]);
-  const [code, setCode] = useState(initialSchema);
-
-  // Parse initial schema to builder state
-  useEffect(() => {
-    // Avoid loop and unnecessary updates
-    if (initialSchema === code) return;
-
-    setCode(initialSchema);
-
+  // Parse schema string to fields - defined outside to be used in initialization
+  const parseFields = (schemaStr: string): SchemaField[] | null => {
     try {
-      if (!initialSchema || initialSchema.trim() === "") {
-        setFields([]);
-        return;
+      if (!schemaStr || schemaStr.trim() === "") {
+        return [];
       }
-      const schema = JSON.parse(initialSchema);
+      const schema = JSON.parse(schemaStr);
       if (schema.type !== "object" || !schema.properties) {
-        setMode("code"); // Complex schema, switch to code mode
-        return;
+        return null; // Invalid for builder
       }
 
-      const parsedFields: SchemaField[] = Object.entries(schema.properties).map(
+      return Object.entries(schema.properties).map(
         ([key, val]: [string, any]) => ({
           id: Math.random().toString(36).substr(2, 9),
           name: key,
@@ -57,15 +46,55 @@ export function SchemaBuilder({ initialSchema, onChange }: SchemaBuilderProps) {
           required: (schema.required || []).includes(key),
         }),
       );
-      setFields(parsedFields);
     } catch {
-      // Invalid JSON, maybe just empty or partial, stay in current mode or switch to code if not empty
-      if (initialSchema && initialSchema.trim() !== "") {
+      return null;
+    }
+  };
+
+  const [code, setCode] = useState(initialSchema);
+  const [prevSchema, setPrevSchema] = useState(initialSchema);
+
+  // Initialize state from props
+  const [fields, setFields] = useState<SchemaField[]>(() => {
+    const parsed = parseFields(initialSchema);
+    return parsed || [];
+  });
+
+  const [mode, setMode] = useState<"builder" | "code">(() => {
+    const parsed = parseFields(initialSchema);
+    // If parsing failed (null) and schema is not empty, force code mode
+    if (parsed === null && initialSchema && initialSchema.trim() !== "") {
+      return "code";
+    }
+    return "builder";
+  });
+
+  // Parse schema string to fields (helper for updates)
+  const parseAndSetFields = (schemaStr: string) => {
+    const parsed = parseFields(schemaStr);
+    if (parsed !== null) {
+      setFields(parsed);
+      return true;
+    }
+    return false;
+  };
+
+  // Sync from parent if props change deeply
+  if (initialSchema !== prevSchema) {
+    setPrevSchema(initialSchema);
+
+    if (initialSchema !== code) {
+      setCode(initialSchema);
+
+      // Attempt schema parse, if complex/invalid switch to code mode
+      const parsed = parseFields(initialSchema);
+      if (parsed !== null) {
+        setFields(parsed);
+      } else if (initialSchema && initialSchema.trim() !== "") {
         setMode("code");
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialSchema]);
+  }
 
   // Update schema when fields change
   const updateSchemaFromFields = (currentFields: SchemaField[]) => {
@@ -132,7 +161,10 @@ export function SchemaBuilder({ initialSchema, onChange }: SchemaBuilderProps) {
           <Button
             variant='ghost'
             size='sm'
-            onClick={() => setMode("builder")}
+            onClick={() => {
+              parseAndSetFields(code);
+              setMode("builder");
+            }}
             className='h-6 text-xs gap-1'
           >
             <List className='w-3 h-3' />
