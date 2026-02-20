@@ -35,11 +35,41 @@ export async function routeTaskToEmployees(
       })
       .join("\n\n");
 
-    // 3. Router Agent Logic (using Mastra)
+    // 3. 获取大模型配置
+    // 必须从系统配置中查找指定的 Brain 模型，严禁自动 fallback
+    const brainModelConfig = await db.systemConfig.findUnique({
+      where: {
+        companyId_key: {
+          companyId,
+          key: "BRAIN_MODEL_ID",
+        },
+      },
+    });
+
+    if (!brainModelConfig?.value) {
+      return {
+        success: false,
+        error: "尚未指定「大脑模型」，请前往「系统设置 -> 核心大脑」进行配置。",
+      };
+    }
+
+    const aiModel = await db.aiModel.findUnique({
+      where: { id: brainModelConfig.value },
+    });
+
+    if (!aiModel || !aiModel.isActive) {
+      return {
+        success: false,
+        error:
+          "指定的大脑模型已失效或被禁用，请前往「系统设置 -> 核心大脑」重新显式指定可用模型。",
+      };
+    }
+
+    // 4. Router Agent Logic (using Mastra)
     const { getMastraAgent } = await import("@/lib/mastra/agents");
     const routerAgent = await getMastraAgent(
       "assistant",
-      "gpt-4o",
+      aiModel.id,
       `
 You are an intelligent Task Dispatcher for a company.
 Your job is to select the BEST employee(s) to handle a specific user task.
@@ -59,6 +89,9 @@ Rules:
    }
 6. Do NOT return markdown formatting, just the raw JSON string.
 `,
+      undefined,
+      undefined,
+      companyId,
     );
 
     const result_ = await routerAgent.generate(taskDescription);

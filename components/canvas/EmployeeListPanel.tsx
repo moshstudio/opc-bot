@@ -105,7 +105,7 @@ export function EmployeeListPanel({
   }, [employees, searchQuery]);
 
   return (
-    <div className='h-full flex flex-col bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-r border-slate-200/60 dark:border-slate-800/60'>
+    <div className='h-full flex flex-col overflow-hidden bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-r border-slate-200/60 dark:border-slate-800/60'>
       {/* Header */}
       <div className='px-4 pt-4 pb-3 space-y-3 border-b border-slate-100 dark:border-slate-800/50'>
         <div className='flex items-center justify-between'>
@@ -146,7 +146,7 @@ export function EmployeeListPanel({
       </div>
 
       {/* Employee List */}
-      <ScrollArea className='flex-1'>
+      <ScrollArea className='flex-1 min-h-0'>
         <div className='p-2 space-y-1.5'>
           {filtered.length === 0 ? (
             <div className='text-center py-10 space-y-3'>

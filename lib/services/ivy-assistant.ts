@@ -115,7 +115,23 @@ export async function ivyScanAndSummarize(companyId: string): Promise<
 
     const userPrompt = `以下是最近 ${companyLogs.length} 条员工工作日志，请分析并总结：\n\n${logsSummary}`;
 
-    // 4. 获取 Ivy 员工的配置
+    // 4. 获取大模型配置
+    // 优先从公司模型库中获取一个可用的模型
+    const aiModel = await db.aiModel.findFirst({
+      where: { companyId, isActive: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!aiModel) {
+      return {
+        success: false as const,
+        processedCount: 0,
+        notificationCount: 0,
+        error: "系统尚未配置任何可用的大模型，请先前往「模型管理」页面添加。",
+      };
+    }
+
+    // 5. 获取 Ivy 员工配置（用于提示词等，如果需要自定义）
     const ivyEmployee = await db.employee.findFirst({
       where: {
         companyId,
@@ -124,21 +140,26 @@ export async function ivyScanAndSummarize(companyId: string): Promise<
       },
     });
 
-    let modelName = "gpt-4o";
+    let modelId = aiModel.id;
     if (ivyEmployee?.config) {
       try {
         const config = JSON.parse(ivyEmployee.config);
-        modelName = config.modelName || config.model || "gpt-4o";
+        const configModelId = config.modelId || config.model;
+        // 如果配置了具体的模型 ID，可以尝试验证或直接使用
+        if (configModelId) modelId = configModelId;
       } catch {
-        /* use default */
+        /* use default from aiModel */
       }
     }
 
-    // 5. 调用 AI 进行分析
+    // 6. 调用 AI 进行分析
     const agent = await getMastraAgent(
       "assistant",
-      modelName,
+      modelId,
       IVY_SYSTEM_PROMPT,
+      undefined,
+      undefined,
+      companyId,
     );
     const result = await agent.generate(userPrompt);
 

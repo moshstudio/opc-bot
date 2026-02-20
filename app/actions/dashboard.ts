@@ -1,9 +1,23 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { getOrCreateCompany } from "./company-actions";
 
 export async function getDashboardStats() {
   try {
+    const res = await getOrCreateCompany();
+    if (!res.success || !res.company) {
+      return {
+        employeeCount: 0,
+        activeEmployeeCount: 0,
+        taskCount: 0,
+        pendingTaskCount: 0,
+        recentTasks: [],
+        recentActivity: [],
+      };
+    }
+    const companyId = res.company.id;
+
     const [
       employeeCount,
       activeEmployeeCount,
@@ -12,21 +26,24 @@ export async function getDashboardStats() {
       recentTasks,
       recentActivity,
     ] = await Promise.all([
-      db.employee.count(),
+      db.employee.count({ where: { companyId } }),
       db.employee.count({
         where: {
+          companyId,
           status: {
             not: "idle",
           },
         },
       }),
-      db.task.count(),
+      db.task.count({ where: { companyId } }),
       db.task.count({
         where: {
+          companyId,
           status: "PENDING",
         },
       }),
       db.task.findMany({
+        where: { companyId },
         take: 5,
         orderBy: {
           updatedAt: "desc",
@@ -35,9 +52,8 @@ export async function getDashboardStats() {
           assignedTo: true,
         },
       }),
-      // For now, let's use tasks as activity.
-      // In a real app, we might have a separate ActivityLog model.
       db.task.findMany({
+        where: { companyId },
         take: 5,
         orderBy: {
           createdAt: "desc",

@@ -197,7 +197,23 @@ export const processExecutor: NodeExecutor = {
   async execute(data, context) {
     const { getMastraAgent } = await import("@/lib/mastra/agents");
 
-    const model = data.model || context.employeeConfig?.model || "gpt-4o";
+    const companyId = context.companyId;
+    const { db } = await import("@/lib/db");
+
+    // 获取可用模型
+    const aiModel = await db.aiModel.findFirst({
+      where: { companyId, isActive: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!aiModel && !data.model && !context.employeeConfig?.model) {
+      throw new Error(
+        "系统尚未配置任何可用的大模型，请先前往「模型管理」页面添加。",
+      );
+    }
+
+    const model =
+      data.model || context.employeeConfig?.model || aiModel?.id || "gpt-4o";
 
     let systemPrompt = data.prompt || context.employeeConfig?.prompt || "";
 
@@ -209,7 +225,14 @@ export const processExecutor: NodeExecutor = {
       context.variables,
     );
 
-    const agent = await getMastraAgent("assistant", model, systemPrompt);
+    const agent = await getMastraAgent(
+      "assistant",
+      model,
+      systemPrompt,
+      undefined,
+      undefined,
+      companyId,
+    );
 
     const retryCount = data.retryCount || 0;
     const timeout = data.timeout || 30000;
@@ -713,7 +736,7 @@ function getVariableValue(variables: Record<string, any>, path: string): any {
       if (current.trim().startsWith("{") || current.trim().startsWith("[")) {
         current = JSON.parse(current);
       }
-    } catch (e) {
+    } catch {
       // 解析失败则保留原字符串
     }
   }

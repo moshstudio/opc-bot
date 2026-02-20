@@ -1,18 +1,8 @@
 import React, { useMemo, useState } from "react";
-import {
-  Search,
-  ChevronRight,
-  Plus,
-  Zap,
-  Play,
-  Settings,
-  X,
-  Store,
-} from "lucide-react";
+import { Search, ChevronRight, Plus, Zap, X, Store } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  NODE_THEMES,
   getVisibleNodesByTab,
   getColorClasses,
   NodeTheme,

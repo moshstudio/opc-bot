@@ -8,6 +8,8 @@ export const ROLE_TEMPLATES: Record<
     icon: string;
     color: string;
     workflow?: { nodes: any[]; edges: any[] };
+    requiresGithub?: boolean;
+    requiresIDE?: boolean;
   }
 > = {
   assistant: {
@@ -15,7 +17,7 @@ export const ROLE_TEMPLATES: Record<
     defaultName: "艾薇 (Ivy)",
     prompt:
       "你是艾薇 (Ivy)，一人公司的 AI 助理员工。你的职责是：\n1. 监控和总结其他 AI 员工的工作动态\n2. 识别值得关注的事项（错误、异常、重要成果）\n3. 生成简洁明了的工作总结报告",
-    model: "gpt-4o",
+    model: "",
     icon: "🌿",
     color: "from-emerald-500 to-teal-500",
     workflow: {
@@ -189,7 +191,7 @@ export const ROLE_TEMPLATES: Record<
     defaultName: "阿尔弗雷德 (Alfred)",
     prompt:
       "你是阿尔弗雷德 (Alfred)，一位贴心且专业的个人生活助理。你像一位经验丰富的英式管家，既温暖体贴又高效精准。你负责关心用户的健康、日程安排和个人琐事，总能给出既实用又暖心的建议。",
-    model: "gpt-4o",
+    model: "",
     icon: "🏠",
     color: "from-green-500 to-emerald-500",
     workflow: {
@@ -367,9 +369,10 @@ export const ROLE_TEMPLATES: Record<
     defaultName: "OpsMaster",
     prompt:
       "你是一个资深的 DevOps 工程师。你精通 Docker, Kubernetes, CI/CD 流水线以及云基础设施管理。如果不清楚具体指令，请询问更多上下文。请用简洁的技术语言回答。",
-    model: "gpt-4-turbo",
+    model: "",
     icon: "⚙️",
     color: "from-orange-500 to-amber-500",
+    requiresGithub: true,
     workflow: {
       nodes: [
         {
@@ -446,9 +449,10 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
     defaultName: "DeployBot",
     prompt:
       "你是一个专注于代码部署和发布的工程师。你熟悉各种发布策略（蓝绿部署、金丝雀发布）和回滚机制。你的首要任务是保证生产环境的稳定性。",
-    model: "gpt-4-turbo",
+    model: "",
     icon: "🚀",
     color: "from-red-500 to-rose-500",
+    requiresGithub: true,
     workflow: {
       nodes: [
         {
@@ -521,7 +525,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
     defaultName: "PM 智囊",
     prompt:
       "你是一个富有洞察力的产品经理。你擅长用户需求分析、功能定义和路线图规划。在回答问题时，请始终从用户价值和商业目标的角度出发。",
-    model: "gpt-4o",
+    model: "",
     icon: "📊",
     color: "from-violet-500 to-purple-500",
     workflow: {
@@ -693,7 +697,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
     defaultName: "灵感缪斯",
     prompt:
       "你是一个创意十足的内容创作者。你擅长撰写引人入胜的文章、社交媒体文案和营销脚本。你的文字风格多变，可以根据受众调整。",
-    model: "gpt-4o",
+    model: "",
     icon: "✍️",
     color: "from-pink-500 to-rose-500",
     workflow: {
@@ -729,6 +733,481 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           type: "output",
           position: { x: 1300, y: 150 },
           data: { label: "发布内容", desc: "完成创作任务" },
+        },
+      ],
+      edges: [
+        { id: "edge-1", source: "node-1", target: "node-2" },
+        { id: "edge-2", source: "node-2", target: "node-3" },
+        { id: "edge-3", source: "node-3", target: "node-4" },
+      ],
+    },
+  },
+  fullstack_engineer: {
+    label: "全栈工程师",
+    defaultName: "全栈大神",
+    prompt:
+      "你是一名高级全栈工程师，精通 React, Next.js, Node.js 以及各种数据库设计。负责项目前后端架构设计、接口开发及复杂问题排查。在回答问题时，请提供高质量的代码示例和架构建议。",
+    model: "",
+    icon: "💻",
+    color: "from-cyan-500 to-emerald-600",
+    requiresIDE: true,
+    workflow: {
+      nodes: [
+        {
+          id: "node-1",
+          type: "start",
+          position: { x: 100, y: 150 },
+          data: { label: "接收需求", desc: "接收全栈开发任务描述" },
+        },
+        {
+          id: "node-2",
+          type: "llm",
+          position: { x: 500, y: 150 },
+          data: {
+            label: "全栈架构设计",
+            desc: "设计前后端方案与数据库",
+            prompt:
+              "作为全栈工程师，请先分析该需求，并输出前后端架构设计方案、组件拆分及数据库表结构建议。",
+          },
+        },
+        {
+          id: "node-3",
+          type: "llm",
+          position: { x: 900, y: 150 },
+          data: {
+            label: "代码生成",
+            desc: "输出前后端最佳实践代码",
+            prompt:
+              "根据设计方案，使用现代技术栈，编写高质量的前后端代码示例，注意处理异常校验和安全性。",
+          },
+        },
+        {
+          id: "node-4",
+          type: "output",
+          position: { x: 1300, y: 150 },
+          data: { label: "交付全栈代码", desc: "输出最终全栈代码段" },
+        },
+      ],
+      edges: [
+        { id: "edge-1", source: "node-1", target: "node-2" },
+        { id: "edge-2", source: "node-2", target: "node-3" },
+        { id: "edge-3", source: "node-3", target: "node-4" },
+      ],
+    },
+  },
+  qa_engineer: {
+    label: "测试工程师",
+    defaultName: "Bug 终结者",
+    prompt:
+      "你是一名严谨的测试工程师。擅长编写测试用例、边界条件分析和自动化测试脚本，致力于找出现有代码或业务逻辑中的漏洞。",
+    model: "",
+    icon: "🐛",
+    color: "from-red-500 to-orange-500",
+    workflow: {
+      nodes: [
+        {
+          id: "node-1",
+          type: "start",
+          position: { x: 100, y: 150 },
+          data: { label: "接收内容", desc: "输入代码或需求PRD" },
+        },
+        {
+          id: "node-2",
+          type: "llm",
+          position: { x: 500, y: 150 },
+          data: {
+            label: "用例设计",
+            desc: "生成测试点与边界条件",
+            prompt:
+              "分析输入内容，梳理出需要覆盖的测试点，特别是异常流和边界条件。",
+          },
+        },
+        {
+          id: "node-3",
+          type: "llm",
+          position: { x: 900, y: 150 },
+          data: {
+            label: "测试脚本编写",
+            desc: "生成自动化测试代码",
+            prompt:
+              "为上述测试点编写自动化测试脚本（如 Jest或Playwright 规范代码）。",
+          },
+        },
+        {
+          id: "node-4",
+          type: "output",
+          position: { x: 1300, y: 150 },
+          data: { label: "交付测试方案", desc: "输出覆盖全面的测试案" },
+        },
+      ],
+      edges: [
+        { id: "edge-1", source: "node-1", target: "node-2" },
+        { id: "edge-2", source: "node-2", target: "node-3" },
+        { id: "edge-3", source: "node-3", target: "node-4" },
+      ],
+    },
+  },
+
+  // =====================
+  // 媒体公司 (Media)
+  // =====================
+  copywriter: {
+    label: "文案策划",
+    defaultName: "爆款制造机",
+    prompt:
+      "你是一名爆款文案策划师，精通各类社交媒体(小红书、抖音、公众号)的内容调性，擅长撰写高转化、高互动的文案。请注重情绪价值和网感。",
+    model: "",
+    icon: "✍️",
+    color: "from-pink-500 to-rose-500",
+    workflow: {
+      nodes: [
+        {
+          id: "node-1",
+          type: "start",
+          position: { x: 100, y: 150 },
+          data: { label: "接收素材", desc: "输入产品或主题素材" },
+        },
+        {
+          id: "node-2",
+          type: "llm",
+          position: { x: 500, y: 150 },
+          data: {
+            label: "痛点提取",
+            desc: "提炼核心卖点和用户情绪",
+            prompt:
+              "分析素材，提炼出能激发用户共鸣的核心痛点、情绪价值和主要卖点。",
+          },
+        },
+        {
+          id: "node-3",
+          type: "llm",
+          position: { x: 900, y: 150 },
+          data: {
+            label: "文案生成",
+            desc: "撰写多平台适应文案",
+            prompt:
+              "基于提炼出的痛点和卖点，生成一篇小红书风格（带Emoji与标签）的爆款文案，和一篇公众号风格的深度软文。",
+          },
+        },
+        {
+          id: "node-4",
+          type: "output",
+          position: { x: 1300, y: 150 },
+          data: { label: "输出文案", desc: "交付多版本排版好文案" },
+        },
+      ],
+      edges: [
+        { id: "edge-1", source: "node-1", target: "node-2" },
+        { id: "edge-2", source: "node-2", target: "node-3" },
+        { id: "edge-3", source: "node-3", target: "node-4" },
+      ],
+    },
+  },
+  video_director: {
+    label: "短视频编导",
+    defaultName: "镜头大师",
+    prompt:
+      "你是一名极具创意的短视频编导，负责从爆款创意构思到分镜头脚本输出。深谙黄金三秒和完播率技巧。",
+    model: "",
+    icon: "🎬",
+    color: "from-fuchsia-600 to-purple-600",
+    workflow: {
+      nodes: [
+        {
+          id: "node-1",
+          type: "start",
+          position: { x: 100, y: 150 },
+          data: { label: "输入主题", desc: "提供视频期望主题及时长" },
+        },
+        {
+          id: "node-2",
+          type: "llm",
+          position: { x: 500, y: 150 },
+          data: {
+            label: "创意构思",
+            desc: "生成爆款结构",
+            prompt:
+              "设计具有吸引力的开头(黄金三秒)、强反转的情节或核心价值输出点。",
+          },
+        },
+        {
+          id: "node-3",
+          type: "llm",
+          position: { x: 900, y: 150 },
+          data: {
+            label: "分镜脚本",
+            desc: "输出表格脚本",
+            prompt:
+              "将创意转化为标准的分镜头脚本（包括画面、景别、台词、音效、时长）。",
+          },
+        },
+        {
+          id: "node-4",
+          type: "output",
+          position: { x: 1300, y: 150 },
+          data: { label: "输出脚本", desc: "交付可直接拍摄的脚本" },
+        },
+      ],
+      edges: [
+        { id: "edge-1", source: "node-1", target: "node-2" },
+        { id: "edge-2", source: "node-2", target: "node-3" },
+        { id: "edge-3", source: "node-3", target: "node-4" },
+      ],
+    },
+  },
+  social_media_manager: {
+    label: "社交媒体运营",
+    defaultName: "运营大牛",
+    prompt:
+      "你是一名社交媒体运营专家，负责数据分析、账号定位、涨粉策略及用户互动分析。",
+    model: "",
+    icon: "📱",
+    color: "from-blue-500 to-indigo-500",
+    workflow: {
+      nodes: [
+        {
+          id: "node-1",
+          type: "start",
+          position: { x: 100, y: 150 },
+          data: { label: "现状输入", desc: "输入账号当前数据与困境" },
+        },
+        {
+          id: "node-2",
+          type: "llm",
+          position: { x: 500, y: 150 },
+          data: {
+            label: "赛道分析",
+            desc: "定位对标账号拆解",
+            prompt: "分析该垂直领域的爆款逻辑、用户画像以及对标账号的打法。",
+          },
+        },
+        {
+          id: "node-3",
+          type: "llm",
+          position: { x: 900, y: 150 },
+          data: {
+            label: "运营规划",
+            desc: "生成起号/涨粉方案",
+            prompt: "针对该账号制定一周的选题库规划及具体的涨粉和互动策略。",
+          },
+        },
+        {
+          id: "node-4",
+          type: "output",
+          position: { x: 1300, y: 150 },
+          data: { label: "输出报告", desc: "交付可落地的运营方案" },
+        },
+      ],
+      edges: [
+        { id: "edge-1", source: "node-1", target: "node-2" },
+        { id: "edge-2", source: "node-2", target: "node-3" },
+        { id: "edge-3", source: "node-3", target: "node-4" },
+      ],
+    },
+  },
+
+  // =====================
+  // 教育公司 (Education)
+  // =====================
+  instructional_designer: {
+    label: "课程设计师",
+    defaultName: "教育专家",
+    prompt:
+      "你是一名专业的课程设计师，负责梳理课程大纲、知识图谱及设计科学的教学闭环。擅长将复杂知识拆解为易消化的模块。",
+    model: "",
+    icon: "📚",
+    color: "from-amber-500 to-orange-500",
+    workflow: {
+      nodes: [
+        {
+          id: "node-1",
+          type: "start",
+          position: { x: 100, y: 150 },
+          data: { label: "接收课题", desc: "输入课程主题和受众标签" },
+        },
+        {
+          id: "node-2",
+          type: "llm",
+          position: { x: 500, y: 150 },
+          data: {
+            label: "目标拆解",
+            desc: "设定学习目标",
+            prompt: "明确该课程的核心教学目标、知识体系图谱，以及先修要求。",
+          },
+        },
+        {
+          id: "node-3",
+          type: "llm",
+          position: { x: 900, y: 150 },
+          data: {
+            label: "大纲设计",
+            desc: "生成章节安排",
+            prompt:
+              "基于学习目标，产出结构清晰、层层递进的课程大纲（细化到每节课重点架构）。",
+          },
+        },
+        {
+          id: "node-4",
+          type: "output",
+          position: { x: 1300, y: 150 },
+          data: { label: "输出大纲", desc: "交付结构化课程大纲" },
+        },
+      ],
+      edges: [
+        { id: "edge-1", source: "node-1", target: "node-2" },
+        { id: "edge-2", source: "node-2", target: "node-3" },
+        { id: "edge-3", source: "node-3", target: "node-4" },
+      ],
+    },
+  },
+  assessment_manager: {
+    label: "题库管理员",
+    defaultName: "出题考官",
+    prompt:
+      "你负责各类学科测试题目的设计与审核，确保题目的质量、难度梯度和教育意义。精通各种题型设计及陷阱布置。",
+    model: "",
+    icon: "📝",
+    color: "from-teal-500 to-emerald-500",
+    workflow: {
+      nodes: [
+        {
+          id: "node-1",
+          type: "start",
+          position: { x: 100, y: 150 },
+          data: { label: "输入知识点", desc: "提供需要考察的具体知识" },
+        },
+        {
+          id: "node-2",
+          type: "llm",
+          position: { x: 500, y: 150 },
+          data: {
+            label: "考点梳理",
+            desc: "分析易错点与重难点",
+            prompt: "提炼该知识点的常见误区、混淆项和核心考察方向。",
+          },
+        },
+        {
+          id: "node-3",
+          type: "llm",
+          position: { x: 900, y: 150 },
+          data: {
+            label: "批量制题",
+            desc: "生成阶梯题库",
+            prompt:
+              "生成包括单选、多选、简答在内的不同难度梯度（基础/进阶/挑战）的测试题，并附带详尽的解析。",
+          },
+        },
+        {
+          id: "node-4",
+          type: "output",
+          position: { x: 1300, y: 150 },
+          data: { label: "输出考卷", desc: "交付高质量评估题" },
+        },
+      ],
+      edges: [
+        { id: "edge-1", source: "node-1", target: "node-2" },
+        { id: "edge-2", source: "node-2", target: "node-3" },
+        { id: "edge-3", source: "node-3", target: "node-4" },
+      ],
+    },
+  },
+  tutor: {
+    label: "答疑辅导员",
+    defaultName: "知心学长",
+    prompt:
+      "你是一名耐心细致的答疑辅导员，能够针对学生的问题提供详尽、易懂的解答。善于启发式教学而非直接给答案。",
+    model: "",
+    icon: "🎓",
+    color: "from-indigo-500 to-violet-500",
+    workflow: {
+      nodes: [
+        {
+          id: "node-1",
+          type: "start",
+          position: { x: 100, y: 150 },
+          data: { label: "接收问题", desc: "输入学生的疑问或错题" },
+        },
+        {
+          id: "node-2",
+          type: "llm",
+          position: { x: 500, y: 150 },
+          data: {
+            label: "症结诊断",
+            desc: "找出思维卡点",
+            prompt: "分析学生该问题背后缺失的底层知识点或思维逻辑漏洞。",
+          },
+        },
+        {
+          id: "node-3",
+          type: "llm",
+          position: { x: 900, y: 150 },
+          data: {
+            label: "启发引导",
+            desc: "生成解答对话",
+            prompt:
+              "使用类比和生动的语言，分步骤地解答问题，最后抛出启发性问题引导学生自主思考。",
+          },
+        },
+        {
+          id: "node-4",
+          type: "output",
+          position: { x: 1300, y: 150 },
+          data: { label: "输出辅导", desc: "给出耐心详尽解答" },
+        },
+      ],
+      edges: [
+        { id: "edge-1", source: "node-1", target: "node-2" },
+        { id: "edge-2", source: "node-2", target: "node-3" },
+        { id: "edge-3", source: "node-3", target: "node-4" },
+      ],
+    },
+  },
+
+  // =====================
+  // 通用/自定义公司 (Custom)
+  // =====================
+  general_assistant: {
+    label: "通用助理",
+    defaultName: "全能小智",
+    prompt:
+      "你是一名全能的AI助理，可以协助用户处理各种日常事务和问题。你知识渊博且服务态度极佳。",
+    model: "",
+    icon: "🤖",
+    color: "from-slate-500 to-gray-500",
+    workflow: {
+      nodes: [
+        {
+          id: "node-1",
+          type: "start",
+          position: { x: 100, y: 150 },
+          data: { label: "接收指令", desc: "获取任意问题或任务" },
+        },
+        {
+          id: "node-2",
+          type: "llm",
+          position: { x: 500, y: 150 },
+          data: {
+            label: "意图解析",
+            desc: "分析任务类型",
+            prompt: "分析用户指令的真实意图和需要用到的背景知识体系。",
+          },
+        },
+        {
+          id: "node-3",
+          type: "llm",
+          position: { x: 900, y: 150 },
+          data: {
+            label: "综合处理",
+            desc: "生成解决方案",
+            prompt:
+              "结合知识库与逻辑推演，给出兼具专业度与可读性的详尽回答或方案。",
+          },
+        },
+        {
+          id: "node-4",
+          type: "output",
+          position: { x: 1300, y: 150 },
+          data: { label: "输出回复", desc: "快速准确地呈现结果" },
         },
       ],
       edges: [

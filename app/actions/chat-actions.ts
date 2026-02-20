@@ -55,17 +55,40 @@ export async function sendMessage(
       }
     }
 
+    // 4. 获取大模型配置
+    const aiModel = await db.aiModel.findFirst({
+      where: { companyId: employee.companyId, isActive: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (
+      !aiModel &&
+      !clientModelConfig?.modelName &&
+      !config.modelName &&
+      !config.model
+    ) {
+      return {
+        success: false,
+        error: "系统尚未配置任何可用的大模型，请先前往「模型管理」页面添加。",
+      };
+    }
+
     const modelName =
       clientModelConfig?.modelName ||
       config.modelName ||
       config.model ||
-      "gpt-4o";
+      aiModel?.id ||
+      "gpt-4o"; // Fallback to string only if absolutely necessary for getMastraAgent to try env
+
     const systemPrompt = config.prompt;
 
     const agent = await getMastraAgent(
       employee.role || "assistant",
       modelName,
       systemPrompt,
+      undefined,
+      undefined,
+      employee.companyId,
     );
     const result = await agent.generate(message);
     const aiResponse = result.text;

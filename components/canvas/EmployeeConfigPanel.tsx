@@ -30,7 +30,7 @@ export function EmployeeConfigPanel({
   const [formData, setFormData] = useState({
     name: employee.name || employee.label || "",
     role: employee.role || "",
-    model: initialConfig.model || "gpt-4o",
+    model: initialConfig.model || "",
     prompt: initialConfig.prompt || "",
     temperature: initialConfig.temperature || 0.7,
   });
@@ -48,7 +48,7 @@ export function EmployeeConfigPanel({
     setFormData({
       name: employee.name || employee.label || "",
       role: employee.role || "",
-      model: config.model || "gpt-4o",
+      model: config.model || "",
       prompt: config.prompt || "",
       temperature: config.temperature || 0.7,
     });
@@ -135,10 +135,12 @@ export function EmployeeConfigPanel({
                 </option>
               ))
             ) : (
-              <>
-                <option value='gpt-4o'>GPT-4o</option>
-                <option value='gpt-4-turbo'>GPT-4 Turbo</option>
-              </>
+              <option
+                disabled
+                value=''
+              >
+                未配置模型，请前往“模型管理”添加
+              </option>
             )}
           </select>
         </div>

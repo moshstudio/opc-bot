@@ -24,10 +24,11 @@ export const agents: Record<string, Agent> = {};
  */
 export async function getMastraAgent(
   role: string,
-  modelIdOrName: string = "gpt-4o",
+  modelIdOrName?: string,
   instructions?: string,
   modelConfig?: { apiKey?: string; baseUrl?: string },
   provider?: string,
+  companyId?: string,
 ) {
   let model;
   let finalModelName = modelIdOrName;
@@ -35,11 +36,29 @@ export async function getMastraAgent(
   let finalBaseUrl = modelConfig?.baseUrl;
   let finalProvider = provider;
 
-  // If explicit config is missing, try to lookup in DB using the ID
-  if (!finalApiKey && !finalBaseUrl) {
+  // 1. If no model specified but companyId available, get default from DB
+  if (!finalModelName && companyId) {
+    try {
+      const dbModel = await db.aiModel.findFirst({
+        where: { companyId, isActive: true },
+        orderBy: { createdAt: "desc" },
+      });
+      if (dbModel) {
+        finalModelName = dbModel.id; // Use ID for lookup in next step
+      }
+    } catch (err) {
+      console.error(
+        "[getMastraAgent] Error fetching default model for company",
+        err,
+      );
+    }
+  }
+
+  // 2. If it's potentially an ID, try to lookup in DB
+  if (finalModelName && !finalApiKey && !finalBaseUrl) {
     try {
       const dbModel = await db.aiModel.findUnique({
-        where: { id: modelIdOrName },
+        where: { id: finalModelName },
       });
       if (dbModel) {
         finalModelName = dbModel.name; // The actual model slug (e.g. "gpt-4o")
@@ -47,9 +66,14 @@ export async function getMastraAgent(
         finalApiKey = dbModel.apiKey || undefined;
         finalBaseUrl = dbModel.baseUrl || undefined;
       }
-    } catch (e) {
+    } catch {
       // Ignore lookup errors (might be a direct slug name instead of ID)
     }
+  }
+
+  // 3. Final Fallback if still no model after all lookups
+  if (!finalModelName) {
+    finalModelName = "gpt-4o";
   }
 
   // Handle different providers

@@ -8,6 +8,17 @@ import { toast } from "sonner";
 import { generateCron } from "@/lib/workflow/cron-utils";
 import { cn } from "@/lib/utils";
 import { getColorClasses, NODE_THEMES } from "./nodeTypeConfig";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 // Import decomposed node detail components
 import {
@@ -496,19 +507,35 @@ export const NodeDetailsPanel = memo(
 
         {/* Footer */}
         <div className='p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex gap-2'>
-          <Button
-            variant='ghost'
-            size='sm'
-            className='flex-1 gap-2 rounded-xl h-9 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20'
-            onClick={() => {
-              if (confirm("确定要删除此节点吗？")) {
-                onDelete(node.id);
-              }
-            }}
-          >
-            <Trash2 size={14} />
-            删除
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant='ghost'
+                size='sm'
+                className='flex-1 gap-2 rounded-xl h-9 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/20'
+              >
+                <Trash2 size={14} />
+                删除
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>确认删除？</AlertDialogTitle>
+                <AlertDialogDescription>
+                  确定要删除此节点吗？此操作不可逆。
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>取消</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => onDelete(node.id)}
+                  className='bg-red-600 hover:bg-red-700 text-white'
+                >
+                  确定删除
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <Button
             size='sm'
             className='flex-[2] gap-2 rounded-xl h-9 text-xs bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20 font-bold'

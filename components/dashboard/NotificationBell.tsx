@@ -54,7 +54,7 @@ export function NotificationBell() {
   // 使用 SWR 获取通知，每 60 秒自动更新，且在窗口聚焦时自动刷新
   const { data, mutate, isLoading, isValidating } = useSWR(
     ["my-notifications", limit],
-    async ([_, l]) => {
+    async ([, l]: any) => {
       const res = await getMyNotifications({ limit: l });
       if (res.success) return res;
       throw new Error(res.error);

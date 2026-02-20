@@ -23,6 +23,7 @@ model User {
 model Company {
   id            String          @id @default(uuid())
   name          String
+  type          String          @default("custom") // custom, developer, media, education
   ownerId       String
   owner         User            @relation(fields: [ownerId], references: [id])
   employees      Employee[]
@@ -98,17 +99,40 @@ model Message {
 }
 
 model Task {
-  id          String    @id @default(uuid())
-  title       String
-  description String?
-  status      String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, FAILED
+  id           String    @id @default(uuid())
+  title        String
+  description  String?
+  status       String    @default("PENDING") // PENDING, IN_PROGRESS, REVIEWING, COMPLETED, FAILED
   assignedToId String?
-  assignedTo  Employee? @relation(fields: [assignedToId], references: [id])
-  companyId   String
-  company     Company   @relation(fields: [companyId], references: [id])
-  logs        String?   // JSON string for execution logs (optional for now)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  assignedTo   Employee? @relation(fields: [assignedToId], references: [id])
+  companyId    String
+  company      Company   @relation(fields: [companyId], references: [id])
+  logs         String?   // JSON string for execution logs (optional for now)
+  
+  // 新增：任务上下文和结果
+  context      String?   // JSON 格式，存储中枢拆解时的前置依赖、要求等
+  result       String?   // 存储该任务的最终执行报告或代码
+
+  // 新增：父子任务支持
+  parentTaskId String?
+  parentTask   Task?     @relation("SubTasks", fields: [parentTaskId], references: [id])
+  subTasks     Task[]    @relation("SubTasks")
+
+  // 新增：任务对话消息
+  messages     TaskMessage[]
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+// 任务沟通或迭代打回过程记录
+model TaskMessage {
+  id         String   @id @default(uuid())
+  taskId     String
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  role       String   // "system" (中枢) | "assistant" (员工)
+  content    String   // 沟通内容、评审意见、打回原因等
+  createdAt  DateTime @default(now())
 }
 
 model KnowledgeBase {

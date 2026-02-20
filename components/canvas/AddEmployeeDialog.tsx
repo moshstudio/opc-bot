@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
+
 import { useModelContext } from "@/components/ModelContext";
 
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -47,6 +47,7 @@ export function AddEmployeeDialog({
     },
   });
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const selectedRole = form.watch("role");
   const currentTemplate = ROLE_TEMPLATES[selectedRole];
 

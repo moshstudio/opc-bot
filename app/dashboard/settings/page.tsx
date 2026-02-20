@@ -19,17 +19,52 @@ import {
   User,
   Key,
   AtSign,
+  Brain,
 } from "lucide-react";
 import {
   updateEmailSettings,
   fetchEmailSettings,
 } from "@/app/actions/notification-actions";
+import {
+  getAiModels,
+  getBrainModelId,
+  setBrainModel,
+} from "@/app/actions/ai-models";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  getOrCreateCompany,
+  deleteCompany,
+  updateCompany,
+} from "@/app/actions/company-actions";
 import { toast } from "sonner";
+import { useCallback } from "react";
 
 export default function SettingsPage() {
   const [companyName, setCompanyName] = useState("一人公司");
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [brainModelId, setBrainModelId] = useState<string>("");
+  const [chatModels, setChatModels] = useState<any[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Email Configuration State
   const [emailConfig, setEmailConfig] = useState({
@@ -48,22 +83,82 @@ export default function SettingsPage() {
       if (res.success && res.config) {
         setEmailConfig(res.config);
       }
+      const companyRes = await getOrCreateCompany();
+      if (companyRes.success && companyRes.company) {
+        setCompanyId(companyRes.company.id);
+        setCompanyName(companyRes.company.name);
+      }
+
+      const models = await getAiModels();
+      setChatModels(models.filter((m: any) => m.category === "chat"));
+
+      const bId = await getBrainModelId();
+      if (bId) setBrainModelId(bId);
+
       setLoading(false);
     }
     init();
   }, []);
 
-  const handleSave = async () => {
-    setLoading(true);
-    const res = await updateEmailSettings(emailConfig);
+  const handleSave = useCallback(
+    async (showToast = true) => {
+      setIsSaving(true);
+      try {
+        const results = await Promise.all([
+          updateEmailSettings(emailConfig),
+          brainModelId
+            ? setBrainModel(brainModelId)
+            : (Promise.resolve({ success: true }) as any),
+          companyId
+            ? updateCompany(companyId, { name: companyName })
+            : (Promise.resolve({ success: true }) as any),
+        ]);
+
+        const allSuccess = results.every((r) => r.success);
+
+        if (allSuccess) {
+          setSaved(true);
+          if (showToast) {
+            toast.success("系统设置已更新");
+          }
+          setTimeout(() => setSaved(false), 2000);
+        } else {
+          const firstError = results.find((r) => !r.success);
+          toast.error(`更新失败: ${firstError?.error || "部分设置保存失败"}`);
+        }
+      } catch (error) {
+        console.error("Save error:", error);
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [emailConfig, brainModelId, companyId, companyName],
+  );
+
+  // Auto-save logic
+  useEffect(() => {
+    // Skip auto-save on initial load
+    if (loading) return;
+
+    const timer = setTimeout(() => {
+      handleSave(false);
+    }, 1500); // 1.5 seconds debounce
+
+    return () => clearTimeout(timer);
+  }, [handleSave, loading]);
+
+  const handleDeleteCompany = async () => {
+    if (!companyId) return;
+
+    setIsDeleting(true);
+    const res = await deleteCompany(companyId);
     if (res.success) {
-      setSaved(true);
-      toast.success("系统设置已更新");
-      setTimeout(() => setSaved(false), 2000);
+      toast.success("公司已删除，正在刷新...");
+      window.location.href = "/dashboard";
     } else {
-      toast.error(`更新失败: ${res.error}`);
+      toast.error(`删除失败: ${res.error}`);
+      setIsDeleting(false);
     }
-    setLoading(false);
   };
 
   const sections = [
@@ -175,6 +270,47 @@ export default function SettingsPage() {
       ),
     },
     {
+      icon: Brain,
+      label: "大脑中枢 (Brain) 配置",
+      desc: "指定用于任务分析、拆解和决策的核心模型",
+      color: "text-blue-600",
+      bgColor: "from-blue-600 to-indigo-600",
+      content: (
+        <div className='w-full max-w-sm mt-2'>
+          <Select
+            value={brainModelId}
+            onValueChange={setBrainModelId}
+          >
+            <SelectTrigger className='rounded-xl h-10 bg-slate-50 dark:bg-slate-900'>
+              <SelectValue placeholder='请选择大脑模型' />
+            </SelectTrigger>
+            <SelectContent>
+              {chatModels.length > 0 ? (
+                chatModels.map((m) => (
+                  <SelectItem
+                    key={m.id}
+                    value={m.id}
+                  >
+                    {m.name} ({m.provider})
+                  </SelectItem>
+                ))
+              ) : (
+                <SelectItem
+                  value='none'
+                  disabled
+                >
+                  未发现可用聊天模型
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+          <p className='text-[10px] text-slate-500 mt-2'>
+            建议选择推理能力最强的模型（如 GPT-4o, Claude 3.5 Sonnet）
+          </p>
+        </div>
+      ),
+    },
+    {
       icon: Globe,
       label: "语言",
       desc: "界面语言偏好",
@@ -236,27 +372,34 @@ export default function SettingsPage() {
             管理公司设置、邮件服务和 AI 助理偏好。
           </p>
         </div>
-        <Button
-          onClick={handleSave}
-          disabled={loading}
-          className={`gap-2 shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all rounded-xl px-5 py-2.5 ${
-            saved
-              ? "bg-green-500 hover:bg-green-600"
-              : "bg-gradient-to-r from-slate-700 to-slate-900 dark:from-slate-200 dark:to-slate-400 dark:text-slate-900 hover:opacity-90"
-          } text-white`}
-        >
-          {saved ? (
-            <>
-              <CheckCircle className='h-4 w-4' />
-              <span>已保存</span>
-            </>
-          ) : (
-            <>
-              <Save className='h-4 w-4' />
-              <span>保存设置</span>
-            </>
-          )}
-        </Button>
+        <div className='flex flex-col md:flex-row md:items-center gap-4'>
+          <Button
+            onClick={() => handleSave(true)}
+            disabled={loading || isSaving}
+            className={`gap-2 shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all rounded-xl px-5 py-2.5 ${
+              saved
+                ? "bg-green-500 hover:bg-green-600 text-white"
+                : "bg-gradient-to-r from-slate-700 to-slate-900 dark:from-slate-200 dark:to-slate-400 dark:text-slate-900 text-white"
+            }`}
+          >
+            {isSaving ? (
+              <>
+                <div className='h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent' />
+                <span>正在保存...</span>
+              </>
+            ) : saved ? (
+              <>
+                <CheckCircle className='h-4 w-4' />
+                <span>已保存</span>
+              </>
+            ) : (
+              <>
+                <Save className='h-4 w-4' />
+                <span>立即保存</span>
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Settings List */}
@@ -300,15 +443,37 @@ export default function SettingsPage() {
                 危险操作
               </div>
               <p className='text-[11px] text-red-600/70 dark:text-red-400/70 mt-0.5'>
-                重置公司数据将删除所有员工、任务和知识库信息。
+                删除当前公司将永久删除包含的所有员工、任务、文件记录。此操作不可逆。
               </p>
             </div>
-            <Button
-              variant='outline'
-              className='rounded-xl border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors'
-            >
-              重置公司
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant='outline'
+                  disabled={isDeleting || !companyId}
+                  className='rounded-xl border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors'
+                >
+                  {isDeleting ? "删除中..." : "删除当前公司"}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>确认删除？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    确定要删除当前公司吗？此操作不可逆！删除当前公司将永久删除包含的所有员工、任务、文件记录。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>取消</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDeleteCompany}
+                    className='bg-red-600 hover:bg-red-700 text-white'
+                  >
+                    确定删除
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </CardContent>
       </Card>

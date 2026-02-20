@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { processTaskByBrain } from "@/lib/services/brain-center";
 
 const prisma = db;
 
@@ -22,6 +23,10 @@ export async function createTask(data: {
         status: "PENDING",
       },
     });
+
+    // 触发大脑中枢进行任务分析与拆解 (异步执行不阻塞返回)
+    processTaskByBrain(task.id, task.companyId).catch(console.error);
+
     revalidatePath("/dashboard/tasks");
     return { success: true, task };
   } catch (error: any) {

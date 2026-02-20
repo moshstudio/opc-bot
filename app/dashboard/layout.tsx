@@ -2,6 +2,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ModelProvider } from "@/components/ModelContext";
 import { NotificationBell } from "@/components/dashboard/NotificationBell";
+import { SystemStatusIndicator } from "@/components/dashboard/SystemStatusIndicator";
 
 export default function DashboardLayout({
   children,
@@ -24,13 +25,10 @@ export default function DashboardLayout({
             </div>
             <div className='flex items-center gap-3'>
               <NotificationBell />
-              <div className='w-2 h-2 rounded-full bg-green-500 animate-pulse' />
-              <span className='text-[11px] text-slate-500 dark:text-slate-400 font-medium'>
-                系统正常
-              </span>
+              <SystemStatusIndicator />
             </div>
           </div>
-          <div className='flex-1 overflow-auto'>{children}</div>
+          <div className='flex-1 overflow-hidden'>{children}</div>
         </main>
       </ModelProvider>
     </SidebarProvider>

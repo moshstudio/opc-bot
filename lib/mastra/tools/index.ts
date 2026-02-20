@@ -1,6 +1,5 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { rag } from "../rag";
 
 /**
  * 日志检索工具

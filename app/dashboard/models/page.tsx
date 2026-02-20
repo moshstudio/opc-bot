@@ -11,6 +11,17 @@ import {
   CardTitle,
   CardContent,
 } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 
 export default function ModelsPage() {
@@ -52,18 +63,34 @@ export default function ModelsPage() {
                   </Button>
                 }
               />
-              <Button
-                variant='ghost'
-                size='icon'
-                className='h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors'
-                onClick={() => {
-                  if (confirm("确定要删除这个模型吗？")) {
-                    removeModel(model.id);
-                  }
-                }}
-              >
-                <Trash2 className='h-4 w-4' />
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant='ghost'
+                    size='icon'
+                    className='h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors'
+                  >
+                    <Trash2 className='h-4 w-4' />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>确认删除？</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      确定要删除这个模型吗？此操作不可逆。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>取消</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => removeModel(model.id)}
+                      className='bg-red-600 hover:bg-red-700 text-white'
+                    >
+                      确定删除
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
 
             <CardHeader className='pb-3'>

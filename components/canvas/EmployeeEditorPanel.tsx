@@ -21,9 +21,6 @@ import {
   MessageSquare,
   Save,
   Loader2,
-  X,
-  Users,
-  Bot,
   ChevronLeft,
   Activity,
 } from "lucide-react";
@@ -108,7 +105,13 @@ export function EmployeeEditorPanel({
     setSaving(true);
     const selectedModel = models.find((m) => m.id === formData.model);
 
+    const currentConfig =
+      typeof employee.config === "string"
+        ? JSON.parse(employee.config)
+        : employee.config || {};
+
     const config = {
+      ...currentConfig,
       model: formData.model,
       modelName: selectedModel ? selectedModel.name : formData.model,
       modelConfig: selectedModel

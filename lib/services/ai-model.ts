@@ -1,5 +1,5 @@
 import { db as prisma } from "@/lib/db";
-import { AiModel, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 export const aiModelService = {
   async getModels(companyId: string) {

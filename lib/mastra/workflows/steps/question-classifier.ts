@@ -38,10 +38,11 @@ export const questionClassifierStep = createStep({
     // 1. 获取 Agent (默认用较快的模型)
     const agent = await getMastraAgent(
       "classifier",
-      inputData.model || "gpt-4o-mini", // 默认使用轻量模型
+      inputData.model,
       undefined,
       { apiKey: undefined },
       inputData.provider,
+      inputData.companyId,
     );
 
     // 2. 构建分类 Prompt

@@ -6,9 +6,10 @@ import {
   Bot,
   Briefcase,
   Database,
-  Sparkles,
   Workflow,
 } from "lucide-react";
+
+import { CompanySwitcher } from "@/components/CompanySwitcher";
 
 import {
   Sidebar,
@@ -32,7 +33,7 @@ const items = [
     color: "text-blue-500",
   },
   {
-    title: "工作流管理",
+    title: "员工管理",
     url: "/dashboard/employees",
     icon: Workflow,
     color: "text-violet-500",
@@ -70,15 +71,8 @@ export function AppSidebar() {
     <Sidebar className='border-r-0'>
       <SidebarContent className='bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl'>
         <SidebarGroup>
-          <SidebarGroupLabel className='px-4 pt-4 pb-2'>
-            <div className='flex items-center gap-2'>
-              <div className='p-1.5 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 shadow-md'>
-                <Sparkles className='h-3.5 w-3.5 text-white' />
-              </div>
-              <span className='font-bold text-sm bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400'>
-                一人公司
-              </span>
-            </div>
+          <SidebarGroupLabel className='px-4 pt-4 pb-2 h-auto'>
+            <CompanySwitcher />
           </SidebarGroupLabel>
           <SidebarGroupContent className='mt-2'>
             <SidebarMenu>

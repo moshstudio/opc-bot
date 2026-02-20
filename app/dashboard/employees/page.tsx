@@ -10,6 +10,7 @@ import {
   updateEmployee,
   deleteEmployee,
 } from "@/app/actions/employee-actions";
+import { getAiModels } from "@/app/actions/ai-models";
 
 import {
   EmployeeListPanel,
@@ -81,7 +82,7 @@ export default function EmployeesPage() {
     if (!companyId) return;
 
     const config = {
-      model: data.model || "gpt-4o",
+      model: data.model || "",
       modelName: data.modelName,
       modelConfig: data.modelConfig,
       prompt: data.prompt || "",
@@ -188,6 +189,28 @@ export default function EmployeesPage() {
   };
 
   const handleToggleActive = async (id: string, active: boolean) => {
+    if (active) {
+      try {
+        const models = await getAiModels();
+        if (!models || models.length === 0) {
+          toast.error("启用失败：当前公司暂未配置任何 AI 模型！");
+          return;
+        }
+
+        const emp = employees.find((e) => e.id === id);
+        if (emp?.config) {
+          const c = JSON.parse(emp.config);
+          if (!c.model) {
+            toast.error("启用失败：员工未选择模型，请编辑后再启用！");
+            setSelectedEmployee(emp);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
     // Optimistic update
     setEmployees((prev) =>
       prev.map((e) => (e.id === id ? { ...e, isActive: active } : e)),
@@ -252,7 +275,7 @@ export default function EmployeesPage() {
 
       <div className='relative flex h-full'>
         {/* Left: Employee List */}
-        <div className='w-[280px] flex-shrink-0 z-10'>
+        <div className='h-full w-[280px] flex-shrink-0 z-10'>
           <EmployeeListPanel
             employees={employees}
             selectedId={selectedEmployee?.id}

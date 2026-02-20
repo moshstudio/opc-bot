@@ -87,14 +87,14 @@ export function TaskBoard({ initialTasks }: TaskBoardProps) {
   };
 
   return (
-    <div className='grid grid-cols-1 md:grid-cols-3 gap-5 h-full overflow-hidden'>
+    <div className='flex md:grid md:grid-cols-3 gap-5 h-full min-h-0 overflow-x-auto md:overflow-hidden p-1 scrollbar-custom'>
       {COLUMNS.map((col) => {
         const columnTasks = tasks.filter((t) => t.status === col.status);
         const ColIcon = col.icon;
         return (
           <div
             key={col.status}
-            className='flex flex-col h-full'
+            className='flex flex-col h-full min-h-0 min-w-[280px] md:min-w-0 flex-shrink-0 md:flex-shrink-1 flex-1'
           >
             {/* Column Header */}
             <div className='flex items-center justify-between mb-4 px-1'>
@@ -114,7 +114,7 @@ export function TaskBoard({ initialTasks }: TaskBoardProps) {
 
             {/* Column Body */}
             <div
-              className={`flex-1 ${col.bgColor} rounded-2xl p-3 space-y-3 overflow-y-auto border border-slate-100 dark:border-slate-800/50`}
+              className={`flex-1 min-h-0 ${col.bgColor} rounded-2xl p-3 space-y-3 overflow-y-auto scrollbar-custom border border-slate-100 dark:border-slate-800/50`}
             >
               {columnTasks.map((task) => (
                 <Card

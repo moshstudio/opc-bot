@@ -118,6 +118,7 @@ export const agentStep = createStep({
       inputData.prompt, // 将 prompt 作为 instructions
       inputData.modelConfig,
       inputData.provider,
+      inputData.companyId,
     );
 
     // 用选中的工具覆盖 Agent 默认工具
