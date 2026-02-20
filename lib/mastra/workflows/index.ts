@@ -44,10 +44,12 @@ export async function executeMastraWorkflow(
       case "start":
       case "cron_trigger":
       case "webhook":
+      case "output":
         return steps.startStep;
       case "knowledge_retrieval":
         return steps.knowledgeRetrievalStep;
       case "llm":
+      case "agent":
       case "process":
         return steps.agentStep;
       case "code":
@@ -58,6 +60,8 @@ export async function executeMastraWorkflow(
         return steps.notificationStep;
       case "condition":
         return steps.conditionStep;
+      case "question_classifier":
+        return steps.questionClassifierStep;
       case "variable_aggregator":
         return steps.variableAggregatorStep;
       default:
@@ -141,6 +145,116 @@ export async function executeMastraWorkflow(
               mergedInput.input = incomingData.output;
             }
 
+            // Special handling for Code node: map codeContent to code
+            // Special handling for Code node: map codeContent to code
+            if (node.type === "code") {
+              const language = mergedInput.codeLanguage || "javascript";
+              mergedInput.language = language;
+
+              if (!mergedInput.code) {
+                if (language === "python" && mergedInput.codeContentPython) {
+                  mergedInput.code = mergedInput.codeContentPython;
+                } else if (mergedInput.codeContent) {
+                  mergedInput.code = mergedInput.codeContent;
+                }
+              }
+            }
+
+            // -------------------------------------------------------------
+            // Conditional Execution Logic
+            // -------------------------------------------------------------
+            // For convergence/merge nodes (multiple incoming edges), we need
+            // to check ALL upstream dependencies. The node should only be
+            // skipped if ALL incoming paths are inactive (skipped or condition
+            // not met). If ANY incoming path is active, proceed execution.
+            // -------------------------------------------------------------
+            const incomingEdges = definition.edges.filter(
+              (e) => e.target === node.id,
+            );
+
+            if (incomingEdges.length > 0) {
+              let hasActiveUpstream = false;
+              let hasConditionFailure = false;
+
+              for (const edge of incomingEdges) {
+                const sourceResult = params.getStepResult?.(edge.source);
+
+                // Check conditional handles (for Condition nodes)
+                if (edge.sourceHandle && sourceResult) {
+                  const resultVal = (sourceResult as any)?.result;
+                  let conditionMet = true;
+                  if (edge.sourceHandle === "true") {
+                    if (resultVal !== true) conditionMet = false;
+                  } else if (edge.sourceHandle === "false") {
+                    if (resultVal !== false) conditionMet = false;
+                  } else {
+                    // Generic string matching (e.g. for classifiers)
+                    if (String(resultVal) !== edge.sourceHandle) {
+                      conditionMet = false;
+                    }
+                  }
+
+                  if (conditionMet) {
+                    hasActiveUpstream = true;
+                  } else {
+                    hasConditionFailure = true;
+                  }
+                  continue;
+                }
+
+                // Check if upstream was skipped
+                if (sourceResult) {
+                  const isSkipped =
+                    (sourceResult as any).status === "skipped" ||
+                    (sourceResult as any)?.output?.status === "skipped";
+                  if (isSkipped) {
+                    // This upstream is skipped, but don't bail yet —
+                    // other upstreams might be active.
+                    continue;
+                  }
+                }
+
+                // If upstream exists and is not skipped, it's active
+                if (sourceResult) {
+                  hasActiveUpstream = true;
+                }
+              }
+
+              // Only skip if we have NO active upstream at all
+              if (
+                !hasActiveUpstream &&
+                (hasConditionFailure || incomingEdges.length > 0)
+              ) {
+                // Double-check: if all edges lead to skipped results, skip this node
+                const allSkipped = incomingEdges.every((edge) => {
+                  const sr = params.getStepResult?.(edge.source);
+                  if (!sr) return false;
+                  if ((sr as any).status === "skipped") return true;
+                  if ((sr as any)?.output?.status === "skipped") return true;
+                  // Condition handle mismatch
+                  if (edge.sourceHandle) {
+                    const rv = (sr as any)?.result;
+                    if (edge.sourceHandle === "true") {
+                      if (rv !== true) return true;
+                    } else if (edge.sourceHandle === "false") {
+                      if (rv !== false) return true;
+                    } else {
+                      if (String(rv) !== edge.sourceHandle) return true;
+                    }
+                  }
+                  return false;
+                });
+
+                if (allSkipped) {
+                  console.log(
+                    `[Mastra] Skipping step ${node.id} because all upstream dependencies are inactive.`,
+                  );
+                  return { status: "skipped" };
+                }
+              }
+            }
+            // -------------------------------------------------------------
+
             // Resolve variables in string inputs and 'variables' object
             // We use a helper to look up {{nodeId}} references using getStepResult
             for (const key of Object.keys(mergedInput)) {
@@ -162,20 +276,28 @@ export async function executeMastraWorkflow(
                     // Check for exact match {{key}} to preserve object type
                     const exactMatch = val.match(/^\{\{([\w.-]+)\}\}$/);
                     if (exactMatch) {
-                      const refKey = exactMatch[1];
-                      if (refKey === "input") {
+                      const fullKey = exactMatch[1]; // e.g. "step1.field"
+                      if (fullKey === "input") {
                         mergedInput[key][varKey] = mergedInput.input;
                       } else {
-                        const stepRes = params.getStepResult(refKey);
-                        // If we can Resolve property access here if needed, but for now assume StepID
-                        // Mastra getStepResult might not handle dot notation.
-                        // If it fails, we should fall back or handle dots manually?
-                        // Let's assume strict node ID for now to pass Objects.
-                        if (stepRes !== undefined) {
-                          mergedInput[key][varKey] =
-                            (stepRes as any)?.output ?? stepRes; // Unpack output if standard
+                        // resolve value using our helper logic (stepId + path)
+                        const parts = fullKey.split(".");
+                        const stepId = parts[0];
+                        const path = parts.slice(1);
+
+                        // We can reuse resolveVariables's string resolver if we want string output,
+                        // but here we want to preserve objects/numbers/booleans if possible.
+                        const stepValue = getStepValue(
+                          stepId,
+                          path,
+                          params.getStepResult,
+                        );
+
+                        if (stepValue !== undefined) {
+                          mergedInput[key][varKey] = stepValue;
                         } else {
-                          // Try standard interpolation as fallback (e.g. if it's a property path not a step id)
+                          // Fallback to string interpolation if direct resolution failed
+                          // (e.g. maybe it was just a string that looked like a variable but wasn't valid)
                           mergedInput[key][varKey] = resolveVariables(
                             val,
                             params.getStepResult,
@@ -256,15 +378,19 @@ export async function executeMastraWorkflow(
           } else if (chunk.type === "workflow-step-result") {
             const stepId = (chunk as any).payload?.id || (chunk as any).stepId;
             const payload = (chunk as any).payload;
-            const status =
-              payload?.status === "success" ? "completed" : "failed";
+            let status = payload?.status === "success" ? "completed" : "failed";
+
+            if (payload?.output?.status === "skipped") {
+              status = "skipped";
+            }
+
             console.log(`[Mastra] Step finished: ${stepId} (${status})`);
 
             const output = payload?.output;
 
             onStepUpdate?.(
               stepId,
-              status,
+              status as any,
               output,
               payload?.status === "failed"
                 ? payload?.error?.message
@@ -289,6 +415,10 @@ export async function executeMastraWorkflow(
         let status: NodeExecutionResult["status"] = "completed";
         if (stepResult.status !== "success") {
           status = "failed";
+        }
+
+        if (stepResult.output?.status === "skipped") {
+          status = "skipped";
         }
 
         return {
@@ -344,6 +474,51 @@ export const workflow = createWorkflow({
 
 export * from "./parallel";
 
+function getStepValue(
+  stepId: string,
+  path: string[],
+  getStepResult: (stepId: string) => any,
+): any {
+  // 1. Get base step result
+  const stepResult = getStepResult(stepId);
+  if (!stepResult) return undefined;
+
+  // Ignore skipped steps
+  if ((stepResult as any)?.status === "skipped") return undefined;
+
+  // If no path, return the "primary" value (output/data/result or raw)
+  if (path.length === 0) {
+    return (
+      stepResult?.output ?? stepResult?.data ?? stepResult?.result ?? stepResult
+    );
+  }
+
+  // 2. Traverse path
+  let current = stepResult;
+  for (let i = 0; i < path.length; i++) {
+    const key = path[i];
+
+    if (current && typeof current === "object") {
+      if (key in current) {
+        current = current[key];
+      } else if (
+        current.output &&
+        typeof current.output === "object" &&
+        key in current.output
+      ) {
+        // Auto-traverse into .output if key not found in top-level
+        current = current.output[key];
+      } else {
+        return undefined;
+      }
+    } else {
+      return undefined;
+    }
+  }
+
+  return current;
+}
+
 function resolveVariables(
   content: string,
   getStepResult: (stepId: string) => any,
@@ -355,16 +530,17 @@ function resolveVariables(
       const val = contextData.input;
       return typeof val === "string" ? val : JSON.stringify(val);
     }
-    const stepResult = getStepResult(key);
-    if (stepResult) {
-      const val =
-        stepResult?.output ??
-        stepResult?.data ??
-        stepResult?.result ??
-        stepResult;
-      if (val === undefined || val === null) return "";
-      return typeof val === "object" ? JSON.stringify(val) : String(val);
-    }
-    return match;
+
+    // Split key into stepId and path
+    // Assumption: Step IDs usually don't contain dots, but if they do, this simple split might be ambiguous.
+    // However, in this system, generated IDs are safe.
+    const parts = key.split(".");
+    const stepId = parts[0];
+    const path = parts.slice(1);
+
+    const val = getStepValue(stepId, path, getStepResult);
+
+    if (val === undefined || val === null) return ""; // empty string for missing vars
+    return typeof val === "object" ? JSON.stringify(val) : String(val);
   });
 }

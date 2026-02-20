@@ -11,11 +11,13 @@ import {
   Sparkles,
   Loader2,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import {
   getMyNotifications,
   readNotification,
   readAllNotifications,
+  clearAllNotifications,
   triggerIvyAnalysis,
 } from "@/app/actions/notification-actions";
 import {
@@ -37,6 +39,9 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
 export function NotificationBell() {
   const [shouldAnimate, setShouldAnimate] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -44,22 +49,26 @@ export function NotificationBell() {
   const [selectedNotification, setSelectedNotification] = useState<any>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
+  const [limit, setLimit] = useState(20);
+
   // 使用 SWR 获取通知，每 60 秒自动更新，且在窗口聚焦时自动刷新
-  const { data, mutate, isLoading } = useSWR(
-    "my-notifications",
-    async () => {
-      const res = await getMyNotifications({ limit: 20 });
+  const { data, mutate, isLoading, isValidating } = useSWR(
+    ["my-notifications", limit],
+    async ([_, l]) => {
+      const res = await getMyNotifications({ limit: l });
       if (res.success) return res;
       throw new Error(res.error);
     },
     {
-      refreshInterval: 60000,
+      refreshInterval: 3000,
       revalidateOnFocus: true,
+      keepPreviousData: true,
     },
   );
 
   const notifications = data?.notifications || [];
   const unreadCount = data?.unreadCount || 0;
+  const total = data?.total || 0;
   const prevCountRef = useRef(unreadCount);
 
   // 监听未读数变化，触发动画（仅在增加时触发）
@@ -105,6 +114,24 @@ export function NotificationBell() {
         false,
       );
       toast.success("已标记所有通知为已读");
+    }
+  };
+
+  const handleClearAll = async () => {
+    const res = await clearAllNotifications();
+    if (res.success) {
+      mutate(
+        {
+          ...data!,
+          unreadCount: 0,
+          notifications: [],
+          total: 0,
+        },
+        false,
+      );
+      toast.success("已清空所有通知");
+    } else {
+      toast.error("清空失败: " + res.error);
     }
   };
 
@@ -256,6 +283,17 @@ export function NotificationBell() {
                   全部已读
                 </Button>
               )}
+              {notifications.length > 0 && (
+                <Button
+                  variant='ghost'
+                  size='icon'
+                  className='h-7 w-7 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors'
+                  onClick={handleClearAll}
+                  title='清空通知'
+                >
+                  <Trash2 className='h-3.5 w-3.5' />
+                </Button>
+              )}
             </div>
           </div>
 
@@ -274,7 +312,7 @@ export function NotificationBell() {
               </div>
             ) : (
               <div className='divide-y divide-slate-50 dark:divide-slate-900'>
-                {notifications.map((n) => (
+                {notifications.map((n: any) => (
                   <div
                     key={n.id}
                     onClick={() => handleNotificationClick(n)}
@@ -304,9 +342,71 @@ export function NotificationBell() {
                             </button>
                           )}
                         </div>
-                        <p className='text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed'>
-                          {n.content}
-                        </p>
+                        {n.isRead ? (
+                          <p className='text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed'>
+                            {n.content}
+                          </p>
+                        ) : (
+                          <div className='text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed'>
+                            <ReactMarkdown
+                              components={{
+                                p: (props: any) => (
+                                  <span
+                                    {...props}
+                                    className='inline'
+                                  />
+                                ),
+                                a: (props: any) => (
+                                  <span
+                                    {...props}
+                                    className='text-violet-500 underline decoration-violet-500/30'
+                                  />
+                                ),
+                                // Simplified rendering for other elements to keep it inline-ish
+                                h1: (props: any) => (
+                                  <span
+                                    {...props}
+                                    className='font-bold'
+                                  />
+                                ),
+                                h2: (props: any) => (
+                                  <span
+                                    {...props}
+                                    className='font-bold'
+                                  />
+                                ),
+                                h3: (props: any) => (
+                                  <span
+                                    {...props}
+                                    className='font-bold'
+                                  />
+                                ),
+                                ul: (props: any) => <span {...props} />,
+                                ol: (props: any) => <span {...props} />,
+                                li: (props: any) => (
+                                  <span
+                                    {...props}
+                                    className='mx-1'
+                                  />
+                                ),
+                                blockquote: (props: any) => (
+                                  <span
+                                    {...props}
+                                    className='italic'
+                                  />
+                                ),
+                                code: (props: any) => (
+                                  <span
+                                    {...props}
+                                    className='bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono'
+                                  />
+                                ),
+                              }}
+                            >
+                              {n.content}
+                            </ReactMarkdown>
+                          </div>
+                        )}
                         <div className='flex items-center justify-between pt-1'>
                           <p className='text-[9px] text-slate-400 uppercase tracking-wider'>
                             {formatDistanceToNow(new Date(n.createdAt), {
@@ -327,6 +427,26 @@ export function NotificationBell() {
                     </div>
                   </div>
                 ))}
+                {notifications.length < total && (
+                  <div className='p-2 text-center'>
+                    <Button
+                      variant='ghost'
+                      size='sm'
+                      className='text-xs text-slate-500 w-full hover:bg-slate-100 dark:hover:bg-slate-800 h-8 font-normal'
+                      onClick={() => setLimit((l) => l + 20)}
+                      disabled={isValidating}
+                    >
+                      {isValidating ? (
+                        <>
+                          <Loader2 className='mr-2 h-3 w-3 animate-spin' />
+                          加载中...
+                        </>
+                      ) : (
+                        "加载更多"
+                      )}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </ScrollArea>
@@ -361,10 +481,97 @@ export function NotificationBell() {
             </DialogDescription>
           </DialogHeader>
           <div className='py-4'>
-            <div className='bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800'>
-              <p className='text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed'>
-                {selectedNotification?.content}
-              </p>
+            <div className='bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 overflow-hidden'>
+              <div className='text-sm text-slate-600 dark:text-slate-300 leading-relaxed'>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    a: (props: any) => (
+                      <a
+                        {...props}
+                        target='_blank'
+                        rel='noopener noreferrer'
+                        className='text-violet-600 dark:text-violet-400 hover:underline break-all'
+                      />
+                    ),
+                    p: ({ ...props }: any) => (
+                      <p
+                        {...props}
+                        className='mb-2 last:mb-0'
+                      />
+                    ),
+                    ul: ({ ...props }: any) => (
+                      <ul
+                        {...props}
+                        className='list-disc list-outside ml-4 mb-2 space-y-1'
+                      />
+                    ),
+                    ol: ({ ...props }: any) => (
+                      <ol
+                        {...props}
+                        className='list-decimal list-outside ml-4 mb-2 space-y-1'
+                      />
+                    ),
+                    li: ({ ...props }: any) => (
+                      <li
+                        {...props}
+                        className='pl-1'
+                      />
+                    ),
+                    h1: ({ ...props }: any) => (
+                      <h1
+                        {...props}
+                        className='text-lg font-bold mb-2 mt-4 first:mt-0 text-slate-900 dark:text-slate-100'
+                      />
+                    ),
+                    h2: ({ ...props }: any) => (
+                      <h2
+                        {...props}
+                        className='text-base font-bold mb-2 mt-3 text-slate-900 dark:text-slate-100'
+                      />
+                    ),
+                    h3: ({ ...props }: any) => (
+                      <h3
+                        {...props}
+                        className='text-sm font-bold mb-1 mt-2 text-slate-900 dark:text-slate-100'
+                      />
+                    ),
+                    blockquote: ({ ...props }: any) => (
+                      <blockquote
+                        {...props}
+                        className='border-l-4 border-slate-200 dark:border-slate-700 pl-4 italic text-slate-500 dark:text-slate-400 my-2'
+                      />
+                    ),
+                    code: ({ className, children, ...props }: any) => {
+                      const match = /language-(\w+)/.exec(className || "");
+                      const isInline = !match && !className;
+                      return isInline ? (
+                        <code
+                          {...props}
+                          className='bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-[0.9em] font-mono text-slate-800 dark:text-slate-200'
+                        >
+                          {children}
+                        </code>
+                      ) : (
+                        <code
+                          {...props}
+                          className='block bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-xs font-mono overflow-x-auto text-slate-800 dark:text-slate-200 my-2'
+                        >
+                          {children}
+                        </code>
+                      );
+                    },
+                    pre: (props: any) => (
+                      <pre
+                        {...props}
+                        className='my-2'
+                      />
+                    ),
+                  }}
+                >
+                  {selectedNotification?.content || ""}
+                </ReactMarkdown>
+              </div>
             </div>
             {selectedNotification?.source === "ivy" && (
               <div className='mt-4 p-3 bg-violet-50/50 dark:bg-violet-900/20 rounded-xl flex items-start gap-3 border border-violet-100 dark:border-violet-800/50'>

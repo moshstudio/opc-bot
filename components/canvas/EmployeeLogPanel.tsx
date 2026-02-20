@@ -70,7 +70,7 @@ export function EmployeeLogPanel({ employeeId }: EmployeeLogPanelProps) {
       throw new Error(result.error || "获取日志失败");
     },
     {
-      refreshInterval: 10000,
+      refreshInterval: 3000,
       revalidateOnFocus: true,
     },
   );
@@ -215,7 +215,7 @@ export function EmployeeLogPanel({ employeeId }: EmployeeLogPanelProps) {
         )}
       </div>
 
-      <ScrollArea className='flex-1 pr-4'>
+      <ScrollArea className='flex-1 min-h-0'>
         {error && logs.length === 0 ? (
           <div className='flex flex-col items-center justify-center h-full text-destructive gap-2'>
             <AlertCircle className='w-6 h-6' />
@@ -227,7 +227,7 @@ export function EmployeeLogPanel({ employeeId }: EmployeeLogPanelProps) {
             <p className='text-sm'>暂无日志记录</p>
           </div>
         ) : (
-          <div className='space-y-4 pb-4'>
+          <div className='space-y-4 pb-4 pr-4'>
             {logs.map((log) => (
               <div
                 key={log.id}

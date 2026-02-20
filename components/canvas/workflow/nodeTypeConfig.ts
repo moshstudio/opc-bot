@@ -100,8 +100,17 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     tab: "start",
     menuLabel: "定时触发器",
     menuDesc: "按 Cron 表达式定时触发工作流",
-    needsDialog: true,
     showSchedule: true,
+    defaultData: {
+      frequency: "daily",
+      time: "09:00",
+      daysOfWeek: "1",
+      daysOfMonth: "1",
+      interval: 1,
+      minute: 0,
+      cron: "0 9 * * *",
+      cronExpression: "0 9 * * *",
+    },
   },
   webhook: {
     typeLabel: "Webhook",
@@ -112,7 +121,6 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     tab: "start",
     menuLabel: "Webhook 触发器",
     menuDesc: "通过 HTTP POST 请求触发工作流",
-    needsDialog: true,
   },
 
   // ============================================================
@@ -127,7 +135,6 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     tab: "node",
     menuLabel: "LLM",
     menuDesc: "调用大语言模型处理文本",
-    needsDialog: true,
     allowRetry: true,
     allowTimeout: true,
   },
@@ -140,7 +147,14 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     tab: "node",
     menuLabel: "知识检索",
     menuDesc: "从知识库中检索相关内容",
-    needsDialog: true,
+    defaultData: {
+      queryType: "logs",
+      queryLimit: 50,
+      queryFilter: "all",
+      queryTimeRange: "24h",
+      queryEmployeeId: "all",
+      queryIncludeProcessed: false,
+    },
   },
   output: {
     typeLabel: "输出",
@@ -161,6 +175,19 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     tab: "node",
     menuLabel: "Agent",
     menuDesc: "自主决策的智能体节点",
+    allowRetry: true,
+    allowTimeout: true,
+    defaultData: {
+      agentType: "function_calling",
+      prompt: "",
+      model: "",
+      inputVariable: "__input__",
+      tools: ["get_employee_logs", "search_knowledge"],
+      maxIterations: 5,
+      memory: { enabled: false, window: 10 },
+      retryCount: 0,
+      timeout: 60000,
+    },
   },
   question_understanding: {
     typeLabel: "问题理解",
@@ -181,6 +208,17 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     tab: "node",
     menuLabel: "问题分类器",
     menuDesc: "将问题分类到预定义类别",
+    allowRetry: true,
+    allowTimeout: true,
+    defaultData: {
+      categories: [
+        { key: "category_1", label: "分类一", description: "" },
+        { key: "category_2", label: "分类二", description: "" },
+      ],
+      instructions: "",
+      model: "",
+      memory: { enabled: false, window: 5 },
+    },
   },
   logic: {
     typeLabel: "逻辑",
@@ -201,7 +239,6 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     tab: "node",
     menuLabel: "条件分支",
     menuDesc: "根据条件选择不同的执行路径",
-    needsDialog: true,
   },
   iteration: {
     typeLabel: "迭代",
@@ -242,7 +279,6 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     tab: "node",
     menuLabel: "代码执行",
     menuDesc: "运行自定义 Python / JavaScript 代码",
-    needsDialog: true,
     allowRetry: true,
     allowTimeout: true,
     defaultData: {
@@ -278,7 +314,6 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     tab: "node",
     menuLabel: "模板转换",
     menuDesc: "使用模板引擎渲染文本",
-    needsDialog: true,
   },
   variable_aggregator: {
     typeLabel: "变量聚合",
@@ -339,7 +374,6 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     tab: "node",
     menuLabel: "HTTP 请求",
     menuDesc: "发送 HTTP API 请求",
-    needsDialog: true,
     allowRetry: true,
     allowTimeout: true,
   },
@@ -367,7 +401,6 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     menuLabel: "子员工",
     menuDesc: "委派任务给其他 AI 员工",
     dashed: true,
-    needsDialog: true,
   },
   custom_tool: {
     typeLabel: "自定义工具",
@@ -418,7 +451,6 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     tab: "tool",
     menuLabel: "发送通知",
     menuDesc: "发送站内信或邮件通知",
-    needsDialog: true,
     defaultData: {
       subject: "工作汇总通知",
       content: "您好，这是过去 24 小时的工作汇总：\n\n{{node-6}}",
@@ -446,7 +478,7 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     gradientPair: "purple",
     tab: "node",
     menuLabel: "AI 处理节点",
-    needsDialog: true,
+    menuDesc: "AI 处理节点",
   },
   text_template: {
     typeLabel: "文本模板",
@@ -456,7 +488,6 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     gradientPair: "violet",
     tab: "node",
     menuLabel: "文本模板",
-    needsDialog: true,
   },
   message: {
     typeLabel: "消息",

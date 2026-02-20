@@ -12,6 +12,7 @@ import {
   getIvyStatus,
 } from "@/lib/services/ivy-assistant";
 import { getOrCreateCompany } from "./company-actions";
+import { clearAllNotifications as _clearAllNotifications } from "@/lib/services/notification";
 
 /**
  * 获取当前公司的所有通知
@@ -60,6 +61,24 @@ export async function readAllNotifications() {
     }
 
     await markAllNotificationsRead(companyRes.company.id);
+    revalidatePath("/dashboard");
+    return { success: true as const };
+  } catch (error: any) {
+    return { success: false as const, error: error.message };
+  }
+}
+
+/**
+ * 清空所有通知
+ */
+export async function clearAllNotifications() {
+  try {
+    const companyRes = await getOrCreateCompany();
+    if (!companyRes.success || !companyRes.company) {
+      return { success: false as const, error: "Company not found" };
+    }
+
+    await _clearAllNotifications(companyRes.company.id);
     revalidatePath("/dashboard");
     return { success: true as const };
   } catch (error: any) {

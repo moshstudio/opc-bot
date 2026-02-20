@@ -116,3 +116,12 @@ export async function cleanOldNotifications(companyId: string) {
     },
   });
 }
+
+/**
+ * 清空所有通知
+ */
+export async function clearAllNotifications(companyId: string) {
+  return db.notification.deleteMany({
+    where: { companyId },
+  });
+}

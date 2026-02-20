@@ -118,7 +118,6 @@ export function initScheduler() {
   // 每分钟同步一次数据库中的配置变化（或者根据业务需要调整频率）
   // 也可以在保存员工时手动触发 syncScheduledWorkflows
   cron.schedule("*/5 * * * *", () => {
-    console.log("[Scheduler] 正在执行每 5 分钟的配置同步...");
     syncScheduledWorkflows();
   });
 }

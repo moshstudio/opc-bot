@@ -67,7 +67,10 @@ export const knowledgeRetrievalExecutor: NodeExecutor = {
     const companyId = context.companyId;
 
     if (!companyId) {
-      throw new Error("缺少上下文公司 ID，无法检索数据");
+      console.warn(
+        `[Workflow] Knowledge Retrieval: 缺少上下文公司 ID (employeeId=${context.employeeId})，跳过检索`,
+      );
+      return JSON.stringify([]);
     }
 
     // 1. 构建时间过滤条件
@@ -482,7 +485,16 @@ export const notificationExecutor: NodeExecutor = {
     const { notificationType = "site", subject, content } = data;
     const companyId = context.companyId;
 
-    if (!companyId) throw new Error("缺少上下文公司 ID");
+    if (!companyId) {
+      console.warn(
+        "[Workflow] Notification: Missing companyId, skipping notification",
+      );
+      return JSON.stringify({
+        siteSent: false,
+        emailSent: false,
+        error: "Missing companyId",
+      });
+    }
 
     const finalSubject = interpolateVariables(
       subject || "系统通知",

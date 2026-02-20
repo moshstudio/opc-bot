@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import React, { memo, useState, useMemo, useEffect } from "react";
 import { nanoid } from "nanoid";
 import {
   Handle,
@@ -7,6 +7,7 @@ import {
   Node,
   NodeToolbar,
   useReactFlow,
+  useUpdateNodeInternals,
 } from "@xyflow/react";
 import {
   NODE_THEMES,
@@ -24,6 +25,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useModelContext } from "@/components/ModelContext";
 
 interface WorkflowNodeData extends Record<string, unknown> {
   label?: string;
@@ -35,6 +37,14 @@ interface WorkflowNodeData extends Record<string, unknown> {
   modelProvider?: string;
   cron?: string;
   frequency?: any;
+  model?: string;
+  codeLanguage?: string;
+  method?: string;
+  url?: string;
+  variable?: string;
+  toolName?: string;
+  subject?: string;
+  categories?: any[];
 }
 
 type WorkflowNode = Node<WorkflowNodeData>;
@@ -45,6 +55,31 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
   const Icon = theme.icon;
   const [isHovered, setIsHovered] = useState(false);
   const { deleteElements, getNode, addNodes } = useReactFlow();
+  const updateNodeInternals = useUpdateNodeInternals();
+
+  useEffect(() => {
+    if (type === "question_classifier") {
+      // 立即更新
+      updateNodeInternals(id);
+      // 稍微延迟再次更新，确保渲染完全稳定
+      const timer = setTimeout(() => updateNodeInternals(id), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [type, id, data.categories, updateNodeInternals]);
+
+  // Get models from context to resolve IDs
+  const { models } = useModelContext();
+
+  // Resolve model name if it's an ID
+  const displayModelName = useMemo(() => {
+    if (type === "llm" && data.model) {
+      const found = models.find((m) => m.id === data.model);
+      return found ? found.name : data.model;
+    }
+    return data.model;
+  }, [models, type, data.model]);
+
+  // ... rest of the component
 
   // 判断是否为起始类型节点（无需 target handle）
   const isStartType = theme.tab === "start";
@@ -113,7 +148,7 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
 
       <div
         className={cn(
-          "rounded-xl border bg-white dark:bg-slate-900 shadow-sm min-w-[200px] transition-all duration-200 overflow-hidden",
+          "rounded-xl border bg-white dark:bg-slate-900 shadow-sm min-w-[200px] transition-all duration-200",
           selected
             ? `ring-2 ring-offset-1 ${colors.borderSelected}`
             : "hover:shadow-md",
@@ -124,7 +159,7 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
         {/* 顶部标题栏 */}
         <div
           className={cn(
-            "flex items-center justify-between px-3 py-2 border-b text-xs font-medium text-white",
+            "flex items-center justify-between px-3 py-2 border-b text-xs font-medium text-white rounded-t-xl",
             colors.topBar,
           )}
         >
@@ -190,18 +225,124 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
             </div>
           )}
 
-          {/* Badges Overlay (Models/Tools) */}
-          <div className='flex items-center gap-1.5 mt-1 pt-1 border-t border-slate-100 dark:border-slate-800/50'>
-            {data.modelProvider && MODEL_PROVIDER_ICONS[data.modelProvider] && (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={MODEL_PROVIDER_ICONS[data.modelProvider]}
-                alt={data.modelProvider}
-                className='w-4 h-4 rounded-sm object-contain'
-              />
+          {/* 问题分类器 - 嵌入式分类列表 (Row-based Handles) */}
+          {type === "question_classifier" &&
+            Array.isArray(data.categories) &&
+            (data.categories as any[]).length > 0 && (
+              <div className='flex flex-col mt-2 -mx-3 border-y border-slate-100 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800'>
+                {(data.categories as any[]).map((cat: any, idx: number) => {
+                  const handleColors = [
+                    "!bg-blue-500",
+                    "!bg-violet-500",
+                    "!bg-emerald-500",
+                    "!bg-amber-500",
+                    "!bg-rose-500",
+                    "!bg-cyan-500",
+                    "!bg-indigo-500",
+                    "!bg-teal-500",
+                  ];
+                  return (
+                    <div
+                      key={cat.key || idx}
+                      className='relative flex items-center justify-between px-3 py-2 bg-slate-50/50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors group'
+                    >
+                      <span className='text-[10px] text-slate-600 dark:text-slate-300 font-medium truncate max-w-[140px]'>
+                        {cat.label || cat.key}
+                      </span>
+
+                      {/* Line connecting to handle visual only */}
+                      <div className='flex-1 h-px border-t border-dashed border-slate-200 dark:border-slate-700 mx-2 opacity-0 group-hover:opacity-100 transition-opacity' />
+
+                      {/* Embedded Handle */}
+                      <Handle
+                        type='source'
+                        position={Position.Right}
+                        id={cat.key}
+                        className={cn(
+                          "w-2.5 h-2.5 border-2 border-white dark:border-slate-950 shadow-sm transition-[transform,opacity] duration-200 z-50",
+                          handleColors[idx % handleColors.length],
+                          isHovered || selected
+                            ? "opacity-100 scale-125"
+                            : "opacity-80 scale-100",
+                        )}
+                        style={{ right: -6, top: "50%" }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             )}
-            <div className='text-[10px] text-slate-400 dark:text-slate-500 font-mono'>
-              v1.0
+
+          {/* Metadata Footer */}
+          <div className='flex items-center justify-between gap-1.5 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/50 min-h-[20px]'>
+            <div className='flex items-center gap-1.5 flex-1 min-w-0'>
+              {/* Model Provider Icon */}
+              {data.modelProvider &&
+                MODEL_PROVIDER_ICONS[data.modelProvider] && (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={MODEL_PROVIDER_ICONS[data.modelProvider]}
+                    alt={data.modelProvider}
+                    className='w-3.5 h-3.5 rounded-sm object-contain shrink-0'
+                  />
+                )}
+
+              {/* Specific Node Info */}
+              {type === "llm" && displayModelName && (
+                <span
+                  className='text-[10px] text-slate-500 font-mono truncate'
+                  title={displayModelName as string}
+                >
+                  {displayModelName as string}
+                </span>
+              )}
+              {type === "code" && data.codeLanguage && (
+                <span className='text-[10px] text-slate-500 font-mono uppercase truncate'>
+                  {data.codeLanguage as string}
+                </span>
+              )}
+              {type === "http_request" && (
+                <div className='flex items-center gap-1 overflow-hidden'>
+                  {data.method && (
+                    <span className='text-[9px] font-bold text-slate-600 uppercase shrink-0'>
+                      {data.method as string}
+                    </span>
+                  )}
+                  {data.url && (
+                    <span
+                      className='text-[9px] text-slate-400 truncate max-w-[80px]'
+                      title={data.url as string}
+                    >
+                      {data.url as string}
+                    </span>
+                  )}
+                </div>
+              )}
+              {type === "variable_assignment" && data.variable && (
+                <span
+                  className='text-[10px] text-slate-500 font-mono truncate'
+                  title={data.variable as string}
+                >
+                  $ {data.variable as string}
+                </span>
+              )}
+              {(type === "tool_node" || type === "custom_tool") &&
+                data.toolName && (
+                  <span
+                    className='text-[10px] text-slate-500 truncate'
+                    title={data.toolName as string}
+                  >
+                    {data.toolName as string}
+                  </span>
+                )}
+              {type === "notification" && data.subject && (
+                <span
+                  className='text-[10px] text-slate-500 truncate max-w-[120px]'
+                  title={data.subject as string}
+                >
+                  {data.subject as string}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -229,7 +370,7 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
                   position={Position.Right}
                   id='true'
                   className={cn(
-                    "w-3 h-3 !bg-emerald-500 border-2 border-white dark:border-slate-950 !top-[35%] shadow-sm transition-all duration-200 hover:scale-125",
+                    "w-3 h-3 !bg-emerald-500 border-2 border-white dark:border-slate-950 !top-[35%] shadow-sm transition-[transform,opacity] duration-200 hover:scale-125",
                     isHovered || selected
                       ? "opacity-100 scale-110"
                       : "opacity-60",
@@ -241,7 +382,7 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
                   position={Position.Right}
                   id='false'
                   className={cn(
-                    "w-3 h-3 !bg-rose-500 border-2 border-white dark:border-slate-950 !top-[65%] shadow-sm transition-all duration-200 hover:scale-125",
+                    "w-3 h-3 !bg-rose-500 border-2 border-white dark:border-slate-950 !top-[65%] shadow-sm transition-[transform,opacity] duration-200 hover:scale-125",
                     isHovered || selected
                       ? "opacity-100 scale-110"
                       : "opacity-60",
@@ -249,12 +390,12 @@ const BaseNode = ({ data, type, selected, id }: NodeProps<WorkflowNode>) => {
                   style={{ right: -6 }}
                 />
               </>
-            ) : (
+            ) : type === "question_classifier" ? null : (
               <Handle
                 type='source'
                 position={Position.Right}
                 className={cn(
-                  "w-3 h-3 border-2 border-white dark:border-slate-900 shadow-sm transition-all duration-200 hover:scale-125",
+                  "w-3 h-3 border-2 border-white dark:border-slate-900 shadow-sm transition-[transform,opacity] duration-200 hover:scale-125",
                   isHovered || selected
                     ? "opacity-100 scale-110"
                     : "opacity-40",

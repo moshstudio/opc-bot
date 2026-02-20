@@ -33,6 +33,13 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { nanoid } from "nanoid";
 
 // ─── Provider Metadata ─────────────────────────────────────
@@ -100,6 +107,17 @@ const PROVIDERS = [
     icon: "⚙",
     categories: ["chat", "embedding"] as const,
   },
+];
+
+const TRANSFORMERS_EMBEDDING_MODELS = [
+  { value: "Xenova/bge-small-zh-v1.5", label: "BGE Small ZH v1.5 (中文推荐)" },
+  { value: "Xenova/bge-m3", label: "BGE M3 (多语言通用)" },
+  { value: "Xenova/all-MiniLM-L6-v2", label: "All MiniLM L6 v2 (英文轻量)" },
+  {
+    value: "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
+    label: "Multilingual MiniLM L12 v2",
+  },
+  { value: "Xenova/m3e-base", label: "M3E Base (中文通用)" },
 ];
 
 // ─── Form Schema ────────────────────────────────────────────
@@ -373,15 +391,40 @@ export function ModelDialog({ model, trigger }: ModelDialogProps) {
                     模型名称
                   </FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder={
-                        selectedProvider === "transformers"
-                          ? "例如：Xenova/bge-small-zh-v1.5"
-                          : "例如：gpt-4o, text-embedding-3-small"
-                      }
-                      className='rounded-xl h-10 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-blue-500/20 transition-shadow'
-                      {...field}
-                    />
+                    {selectedProvider === "transformers" ? (
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        value={field.value}
+                      >
+                        <SelectTrigger className='w-full h-10 rounded-xl bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 transition-shadow'>
+                          <SelectValue placeholder='选择模型' />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TRANSFORMERS_EMBEDDING_MODELS.map((model) => (
+                            <SelectItem
+                              key={model.value}
+                              value={model.value}
+                            >
+                              <div className='flex flex-col items-start text-left'>
+                                <span className='font-medium'>
+                                  {model.value}
+                                </span>
+                                <span className='text-xs text-muted-foreground'>
+                                  {model.label}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        placeholder='例如：gpt-4o, text-embedding-3-small'
+                        className='rounded-xl h-10 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-blue-500/20 transition-shadow'
+                        {...field}
+                      />
+                    )}
                   </FormControl>
                   <p className='text-[11px] text-muted-foreground mt-1'>
                     {selectedProvider === "transformers"

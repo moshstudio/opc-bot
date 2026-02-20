@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getChatHistory, sendMessage } from "@/app/actions/chat-actions";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { useModelContext } from "@/components/ModelContext";
 
 interface EmployeeChatPanelProps {
@@ -103,37 +103,9 @@ export function EmployeeChatPanel({ employee }: EmployeeChatPanelProps) {
     setLoading(false);
   };
 
-  const statusMap: Record<string, string> = {
-    active: "活跃",
-    idle: "空闲",
-    working: "工作中",
-  };
-
   return (
     <div className='flex flex-col h-full'>
-      <div className='mb-4'>
-        <Card>
-          <CardHeader className='pb-2 p-3'>
-            <CardTitle className='text-xs font-medium text-muted-foreground'>
-              状态
-            </CardTitle>
-          </CardHeader>
-          <CardContent className='p-3 pt-0'>
-            <div className='flex items-center gap-2'>
-              <div
-                className={`w-2 h-2 rounded-full ${employee.status === "active" ? "bg-green-500" : "bg-gray-300"}`}
-              />
-              <span className='text-sm capitalize'>
-                {statusMap[employee.status as string] ||
-                  employee.status ||
-                  "空闲"}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <ScrollArea className='flex-1 pr-4 -mr-4'>
+      <ScrollArea className='flex-1 pr-4 -mr-4 min-h-0'>
         <div className='space-y-4 pb-4'>
           {messages.map((msg, i) => (
             <div

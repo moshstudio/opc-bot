@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState, useEffect } from "react";
+import React, { useCallback, useState, useEffect, useRef } from "react";
 import {
   ReactFlow,
   Controls,
@@ -14,17 +14,26 @@ import {
   Panel,
   useReactFlow,
   MiniMap,
+  Edge,
+  NodeChange,
+  EdgeChange,
 } from "@xyflow/react";
-import { Grid3X3, Lock, Unlock, Map as MapIcon } from "lucide-react";
+import {
+  Grid3X3,
+  Lock,
+  Unlock,
+  Map as MapIcon,
+  RotateCcw,
+  RotateCw,
+} from "lucide-react";
 import { nanoid } from "nanoid";
 import { cn } from "@/lib/utils";
 import "@xyflow/react/dist/style.css";
-import { NodeDialogs } from "./NodeDialogs";
+
 import { NodeDetailsPanel } from "./NodeDetailsPanel";
 import { AddNodePanel } from "./AddNodePanel";
 import { WorkflowNodeTypes } from "./WorkflowNodeTypes";
 import { NODE_THEMES, type NodeTheme } from "./nodeTypeConfig";
-import { useModelContext } from "@/components/ModelContext";
 import { Button } from "@/components/ui/button";
 import { Play, Loader2, Save, Plus, Terminal } from "lucide-react";
 import { toast } from "sonner";
@@ -33,6 +42,7 @@ import {
   WorkflowNode,
   WorkflowEdge,
   WorkflowExecutionResult,
+  NodeExecutionResult,
 } from "@/lib/workflow/types";
 import { TestRunDialog } from "./TestRunDialog";
 import { TestRunDrawer } from "./TestRunDrawer";
@@ -54,11 +64,53 @@ const getNodeColor = (type?: string) => {
   return EDGE_COLORS[theme.color] || "#94a3b8";
 };
 
+const getEdgeColor = (
+  sourceNode: any,
+  targetNode: any,
+  sourceHandle?: string | null,
+) => {
+  if (!sourceNode) return "#94a3b8";
+
+  // 1. Condition Node
+  if (sourceNode.type === "condition") {
+    if (sourceHandle === "true") return EDGE_COLORS.emerald;
+    if (sourceHandle === "false") return EDGE_COLORS.rose;
+  }
+
+  // 2. Question Classifier Node
+  if (sourceNode.type === "question_classifier") {
+    const categories = (sourceNode.data.categories as any[]) || [];
+    const idx = categories.findIndex((c: any) => c.key === sourceHandle);
+    if (idx !== -1) {
+      const colorKeys = [
+        "blue",
+        "violet",
+        "emerald",
+        "amber",
+        "rose",
+        "cyan",
+        "indigo",
+        "teal",
+      ];
+      const key = colorKeys[idx % colorKeys.length];
+      return EDGE_COLORS[key] || EDGE_COLORS.blue;
+    }
+  }
+
+  // 3. Default: Target Node Color
+  return getNodeColor(targetNode?.type);
+};
+
 interface WorkflowCanvasProps {
   initialWorkflow?: WorkflowDefinition;
   onSave: (workflow: WorkflowDefinition) => void;
   allEmployees: { id: string; name: string; role: string }[];
   currentEmployeeId: string;
+}
+
+interface HistoryItem {
+  nodes: Node[];
+  edges: Edge[];
 }
 
 function WorkflowCanvasContent({
@@ -72,20 +124,145 @@ function WorkflowCanvasContent({
   );
   const [edges, setEdges, onEdgesChange] = useEdgesState(
     (initialWorkflow?.edges?.map((e) => {
+      const sourceNode = initialWorkflow.nodes.find((n) => n.id === e.source);
       const targetNode = initialWorkflow.nodes.find((n) => n.id === e.target);
       return {
         ...e,
         animated: true,
         style: {
           ...(e as any).style,
-          stroke: getNodeColor(targetNode?.type as string),
+          stroke: getEdgeColor(sourceNode, targetNode, e.sourceHandle),
         },
       };
     }) || []) as any[],
   );
-  const [activeDialog, setActiveDialog] = useState<string | null>(null);
+
+  // History State
+  const [history, setHistory] = useState<{
+    past: HistoryItem[];
+    future: HistoryItem[];
+  }>({
+    past: [],
+    future: [],
+  });
+
+  // Refs for current nodes/edges to access in callbacks without dependencies
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
+
+  // Clear history when switching employees
+  useEffect(() => {
+    setHistory({ past: [], future: [] });
+  }, [currentEmployeeId]);
+
+  const recordHistory = useCallback(() => {
+    setHistory((prev) => {
+      const newPast = [
+        ...prev.past,
+        {
+          nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+          edges: JSON.parse(JSON.stringify(edgesRef.current)),
+        },
+      ];
+      // Limit history size to 50
+      if (newPast.length > 50) {
+        newPast.shift();
+      }
+      return {
+        past: newPast,
+        future: [],
+      };
+    });
+  }, []);
+
+  const undo = useCallback(() => {
+    if (history.past.length === 0) return;
+
+    const previousState = history.past[history.past.length - 1];
+    const newPast = history.past.slice(0, -1);
+
+    const current = {
+      nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+      edges: JSON.parse(JSON.stringify(edgesRef.current)),
+    };
+
+    setHistory({
+      past: newPast,
+      future: [current, ...history.future],
+    });
+
+    setNodes(previousState.nodes);
+    setEdges(previousState.edges);
+    onSave({
+      nodes: previousState.nodes as any as WorkflowNode[],
+      edges: previousState.edges as any as WorkflowEdge[],
+    });
+  }, [history, setNodes, setEdges, onSave]);
+
+  const redo = useCallback(() => {
+    if (history.future.length === 0) return;
+
+    const nextState = history.future[0];
+    const newFuture = history.future.slice(1);
+
+    const current = {
+      nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+      edges: JSON.parse(JSON.stringify(edgesRef.current)),
+    };
+
+    setHistory({
+      past: [...history.past, current],
+      future: newFuture,
+    });
+
+    setNodes(nextState.nodes);
+    setEdges(nextState.edges);
+    onSave({
+      nodes: nextState.nodes as any as WorkflowNode[],
+      edges: nextState.edges as any as WorkflowEdge[],
+    });
+  }, [history, setNodes, setEdges, onSave]);
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Ignore if input/textarea is focused
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        (event.target as HTMLElement).isContentEditable
+      ) {
+        return;
+      }
+
+      if (event.ctrlKey || event.metaKey) {
+        if (event.key === "z") {
+          event.preventDefault();
+          if (event.shiftKey) {
+            redo();
+          } else {
+            undo();
+          }
+        } else if (event.key === "y") {
+          event.preventDefault();
+          redo();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [undo, redo]);
+
   const [addPanelOpen, setAddPanelOpen] = useState(false);
-  const { models } = useModelContext();
   const { getNode, screenToFlowPosition } = useReactFlow();
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -165,6 +342,8 @@ function WorkflowCanvasContent({
       const type = event.dataTransfer.getData("application/reactflow");
       if (!type) return;
 
+      recordHistory();
+
       const position = screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
@@ -187,13 +366,16 @@ function WorkflowCanvasContent({
       setNodes(newNodes);
       onSave({ nodes: newNodes, edges });
     },
-    [nodes, edges, screenToFlowPosition, onSave, setNodes],
+    [nodes, edges, screenToFlowPosition, onSave, setNodes, recordHistory],
   );
 
   const onConnect = useCallback(
     (params: Connection) => {
+      recordHistory();
+      const sourceNode = getNode(params.source);
       const targetNode = getNode(params.target);
-      const color = getNodeColor(targetNode?.type);
+      const color = getEdgeColor(sourceNode, targetNode, params.sourceHandle);
+
       const newEdges = addEdge(
         { ...params, animated: true, style: { stroke: color } },
         edges,
@@ -204,7 +386,7 @@ function WorkflowCanvasContent({
         edges: newEdges as any as WorkflowEdge[],
       });
     },
-    [setEdges, getNode, edges, nodes, onSave],
+    [setEdges, getNode, edges, nodes, onSave, recordHistory],
   );
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
@@ -219,6 +401,7 @@ function WorkflowCanvasContent({
 
   const handleUpdateNode = useCallback(
     (id: string, data: any) => {
+      recordHistory();
       const newNodes = nodes.map((node) => {
         if (node.id === id) {
           return { ...node, data: { ...node.data, ...data } };
@@ -231,11 +414,12 @@ function WorkflowCanvasContent({
         edges: edges as any as WorkflowEdge[],
       });
     },
-    [nodes, edges, setNodes, onSave],
+    [nodes, edges, setNodes, onSave, recordHistory],
   );
 
   const handleDeleteNode = useCallback(
     (id: string) => {
+      recordHistory();
       const newNodes = nodes.filter((node) => node.id !== id);
       const newEdges = edges.filter(
         (edge) => edge.source !== id && edge.target !== id,
@@ -248,11 +432,12 @@ function WorkflowCanvasContent({
         edges: newEdges as any as WorkflowEdge[],
       });
     },
-    [nodes, edges, setNodes, setEdges, onSave],
+    [nodes, edges, setNodes, setEdges, onSave, recordHistory],
   );
 
   const handleCreateNode = useCallback(
     (type: string, data: any) => {
+      recordHistory();
       const theme = NODE_THEMES[type] || NODE_THEMES.process;
       const newNode: Node = {
         id: nanoid(6),
@@ -267,24 +452,17 @@ function WorkflowCanvasContent({
       setNodes(newNodes);
       onSave({ nodes: newNodes, edges });
     },
-    [nodes, edges, setNodes, onSave],
+    [nodes, edges, setNodes, onSave, recordHistory],
   );
 
   const handleSelectNodeType = useCallback(
     (type: string, theme: NodeTheme) => {
-      if (theme.needsDialog) {
-        // For types with a dialog, open the dialog for configuration
-        setActiveDialog(type);
-        setTestDrawerOpen(false);
-        setAddPanelOpen(false);
-      } else {
-        // For simple types, create node directly with defaults
-        handleCreateNode(type, {
-          label: theme.defaultLabel,
-        });
-        setTestDrawerOpen(false);
-        setAddPanelOpen(false);
-      }
+      // Create node directly with defaults
+      handleCreateNode(type, {
+        label: theme.defaultLabel,
+      });
+      setTestDrawerOpen(false);
+      setAddPanelOpen(false);
     },
     [handleCreateNode],
   );
@@ -308,7 +486,12 @@ function WorkflowCanvasContent({
       setSelectedNodeId(null);
       setAddPanelOpen(false);
       setTestDrawerOpen(true);
-      setTestResult(null);
+      setTestResult({
+        success: false,
+        finalOutput: null,
+        nodeResults: [],
+        totalDuration: 0,
+      });
 
       try {
         toast.info("正在启动工作流测试...");
@@ -396,6 +579,49 @@ function WorkflowCanvasContent({
                     return node;
                   }),
                 );
+
+                // 同时也更新 TestDrawer 的 result，以便实时显示列表
+                setTestResult((prev) => {
+                  const currentResults = prev ? [...prev.nodeResults] : [];
+                  const existingIndex = currentResults.findIndex(
+                    (r) => r.nodeId === chunk.nodeId,
+                  );
+                  const nodeDef = nodes.find((n) => n.id === chunk.nodeId);
+
+                  // 映射状态
+                  let statusStr = "running";
+                  if (chunk.status === "completed") statusStr = "completed";
+                  else if (chunk.status === "failed") statusStr = "failed";
+                  else if (chunk.status === "skipped") statusStr = "skipped";
+
+                  const newItem: NodeExecutionResult = {
+                    nodeId: chunk.nodeId,
+                    nodeType: (nodeDef?.type as any) || "process",
+                    nodeLabel: nodeDef?.data?.label || "未知节点",
+                    status: statusStr as any,
+                    output: chunk.output,
+                    error: chunk.error,
+                    startTime: Date.now(),
+                    // 注意：流式 update 中没有 duration，暂时不填或计算差值
+                  };
+
+                  if (existingIndex >= 0) {
+                    currentResults[existingIndex] = {
+                      ...currentResults[existingIndex],
+                      ...newItem,
+                      startTime: currentResults[existingIndex].startTime, // 保留原始开始时间
+                    };
+                  } else {
+                    currentResults.push(newItem);
+                  }
+
+                  return {
+                    success: false, // 运行中暂时为 false
+                    finalOutput: null,
+                    nodeResults: currentResults,
+                    totalDuration: 0,
+                  };
+                });
               } else if (chunk.type === "final") {
                 const result = chunk.result;
                 setTestResult(result);
@@ -435,18 +661,46 @@ function WorkflowCanvasContent({
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
 
+  // Trigger history recording when nodes are dragged
+  const onNodeDragStart = useCallback(() => {
+    recordHistory();
+  }, [recordHistory]);
+
+  const onNodesChangeWithHistory = useCallback(
+    (changes: NodeChange[]) => {
+      const isRemoval = changes.some((c) => c.type === "remove");
+      if (isRemoval) {
+        recordHistory();
+      }
+      onNodesChange(changes);
+    },
+    [onNodesChange, recordHistory],
+  );
+
+  const onEdgesChangeWithHistory = useCallback(
+    (changes: EdgeChange[]) => {
+      const isRemoval = changes.some((c) => c.type === "remove");
+      if (isRemoval) {
+        recordHistory();
+      }
+      onEdgesChange(changes);
+    },
+    [onEdgesChange, recordHistory],
+  );
+
   return (
     <div className='h-full w-full relative bg-slate-50 dark:bg-slate-950/50'>
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
+        onNodesChange={onNodesChangeWithHistory}
+        onEdgesChange={onEdgesChangeWithHistory}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         onDrop={onDrop}
         onDragOver={onDragOver}
+        onNodeDragStart={onNodeDragStart}
         nodeTypes={WorkflowNodeTypes}
         fitView
         fitViewOptions={{ padding: 0.4, maxZoom: 0.8 }}
@@ -485,6 +739,27 @@ function WorkflowCanvasContent({
           showInteractive={false}
           className='bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-lg !flex !flex-row !gap-0.5 !p-1 !rounded-lg'
         >
+          <Button
+            variant='ghost'
+            size='icon'
+            className='w-7 h-7'
+            onClick={undo}
+            disabled={history.past.length === 0}
+            title='撤销 (Ctrl+Z)'
+          >
+            <RotateCcw className='w-3.5 h-3.5 text-slate-500' />
+          </Button>
+          <Button
+            variant='ghost'
+            size='icon'
+            className='w-7 h-7'
+            onClick={redo}
+            disabled={history.future.length === 0}
+            title='重做 (Ctrl+Shift+Z)'
+          >
+            <RotateCw className='w-3.5 h-3.5 text-slate-500' />
+          </Button>
+          <div className='w-px h-4 bg-slate-200 dark:bg-slate-700 mx-0.5 my-auto' />
           <Button
             variant='ghost'
             size='icon'
@@ -609,17 +884,6 @@ function WorkflowCanvasContent({
           lastTestInput={lastTestInput}
         />
       )}
-
-      <NodeDialogs
-        activeDialog={activeDialog}
-        setActiveDialog={setActiveDialog}
-        onCreateNode={handleCreateNode}
-        models={models}
-        availableSubEmployees={allEmployees.filter(
-          (e) => e.id !== currentEmployeeId,
-        )}
-        allEmployees={allEmployees}
-      />
 
       <TestRunDialog
         open={testDialogOpen}

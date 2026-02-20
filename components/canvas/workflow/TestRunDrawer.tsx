@@ -1,4 +1,4 @@
-import React, { useState, useMemo, memo } from "react";
+import React, { useState, useMemo, memo, useRef, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  AlertCircle,
   ChevronRight,
   ChevronDown,
   Loader2,
@@ -33,6 +32,17 @@ export function TestRunDrawer({
   result,
   isRunning,
 }: TestRunDrawerProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when new results arrive
+  useEffect(() => {
+    if (isOpen && result?.nodeResults?.length) {
+      setTimeout(() => {
+        scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    }
+  }, [result?.nodeResults?.length, isOpen]);
+
   if (!isOpen) return null;
 
   return (
@@ -73,7 +83,10 @@ export function TestRunDrawer({
         </div>
 
         <div className='flex-1 overflow-hidden h-full relative'>
-          {isRunning ? (
+          {isRunning &&
+          (!result ||
+            !result.nodeResults ||
+            result.nodeResults.length === 0) ? (
             <div className='flex flex-col items-center justify-center h-full text-slate-500 gap-4'>
               <Loader2 className='w-8 h-8 animate-spin text-violet-600' />
               <p>正在执行工作流节点...</p>
@@ -101,15 +114,18 @@ export function TestRunDrawer({
                   className='h-full m-0 border-0 flex flex-col'
                 >
                   <ScrollArea className='flex-1 h-full'>
-                    <div className='px-6 pb-6 space-y-4'>
+                    <div className='px-6 py-6'>
                       {result.nodeResults && result.nodeResults.length > 0 ? (
-                        result.nodeResults.map((nodeResult, index) => (
-                          <NodeTraceItem
-                            key={nodeResult.nodeId}
-                            result={nodeResult}
-                            isLast={index === result.nodeResults.length - 1}
-                          />
-                        ))
+                        <>
+                          {result.nodeResults.map((nodeResult, index) => (
+                            <NodeTraceItem
+                              key={nodeResult.nodeId}
+                              result={nodeResult}
+                              isLast={index === result.nodeResults.length - 1}
+                            />
+                          ))}
+                          <div ref={scrollRef} />
+                        </>
                       ) : (
                         <div className='text-center text-slate-500 py-8'>
                           暂无节点执行记录
@@ -242,122 +258,168 @@ const NodeTraceItem = memo(function NodeTraceItem({
     return result.error;
   }, [expanded, result.error]);
 
-  const getStatusIcon = (status: string) => {
+  const getStatusConfig = (status: string) => {
     switch (status) {
       case "completed":
       case "success":
-        return <CheckCircle2 className='w-4 h-4 text-emerald-500' />;
+        return {
+          icon: CheckCircle2,
+          color: "text-emerald-600 dark:text-emerald-500",
+          borderColor: "border-emerald-200 dark:border-emerald-800",
+          bgColor: "bg-emerald-50 dark:bg-emerald-950/20",
+          cardBorderColor: "border-emerald-200 dark:border-emerald-800",
+          cardBgColor: "bg-emerald-50/50 dark:bg-emerald-900/10",
+        };
       case "failed":
       case "error":
-        return <XCircle className='w-4 h-4 text-red-500' />;
+        return {
+          icon: XCircle,
+          color: "text-red-600 dark:text-red-500",
+          borderColor: "border-red-200 dark:border-red-800",
+          bgColor: "bg-red-50 dark:bg-red-950/20",
+          cardBorderColor: "border-red-200 dark:border-red-800",
+          cardBgColor: "bg-red-50/50 dark:bg-red-900/10",
+        };
       case "running":
-        return <Loader2 className='w-4 h-4 animate-spin text-blue-500' />;
-      case "skipped":
-        return <AlertCircle className='w-4 h-4 text-slate-400' />;
+        return {
+          icon: Loader2,
+          color: "text-blue-600 dark:text-blue-500",
+          borderColor: "border-blue-200 dark:border-blue-800",
+          bgColor: "bg-blue-50 dark:bg-blue-950/20",
+          cardBorderColor: "border-blue-200 dark:border-blue-800",
+          cardBgColor: "bg-blue-50/50 dark:bg-blue-900/10",
+        };
       default:
-        return <Clock className='w-4 h-4 text-slate-400' />;
+        return {
+          icon: Clock,
+          color: "text-slate-500 dark:text-slate-400",
+          borderColor: "border-slate-200 dark:border-slate-700",
+          bgColor: "bg-slate-50 dark:bg-slate-900",
+          cardBorderColor: "border-slate-200 dark:border-slate-800",
+          cardBgColor: "bg-white dark:bg-slate-950",
+        };
     }
   };
 
-  const statusColors: any = {
-    completed:
-      "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-900",
-    success:
-      "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-900",
-    failed: "bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-900",
-    error: "bg-red-50 border-red-200 dark:bg-red-950/20 dark:border-red-900",
-    running:
-      "bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900",
-    skipped:
-      "bg-slate-50 border-slate-200 dark:bg-slate-900 dark:border-slate-800",
-    pending:
-      "bg-slate-50 border-slate-200 dark:bg-slate-900 dark:border-slate-800",
-  };
-
-  const statusColor =
-    statusColors[result.status as keyof typeof statusColors] ||
-    statusColors.pending;
+  const config = getStatusConfig(result.status);
+  const Icon = config.icon;
 
   return (
-    <div className='relative pl-4'>
-      {/* Connector Line */}
-      {!isLast && (
-        <div className='absolute left-[23px] top-8 bottom-[-16px] w-[2px] bg-slate-200 dark:bg-slate-800' />
-      )}
-
-      <div
-        className={cn(
-          "rounded-lg border p-3 cursor-pointer transition-all hover:shadow-sm mb-3",
-          statusColor,
+    <div className='relative flex gap-4'>
+      {/* Timeline Column */}
+      <div className='flex flex-col items-center'>
+        {/* Connector Line - only show if there IS a next item (not last) */}
+        {!isLast && (
+          <div className='absolute top-[30px] bottom-[-16px] w-[2px] bg-slate-200 dark:bg-slate-800 left-[15px]' />
         )}
-        onClick={() => setExpanded(!expanded)}
-      >
-        <div className='flex items-center justify-between'>
-          <div className='flex items-center gap-3'>
-            {getStatusIcon(result.status)}
-            <div>
-              <div className='font-medium text-sm'>
-                {result.nodeLabel || "未知节点"}
-              </div>
-              <div className='flex items-center gap-2 mt-1'>
-                <Badge
-                  variant='outline'
-                  className='text-[10px] h-4 px-1 py-0 font-normal bg-white/50 dark:bg-black/20'
-                >
-                  {result.nodeType}
-                </Badge>
-                {result.duration && (
-                  <span className='text-[10px] text-slate-500'>
-                    {result.duration}ms
+
+        {/* Status Icon - Aligned with Card Header Center (approx 14px down) */}
+        <div
+          className={cn(
+            "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 transition-colors mt-[14px]",
+            config.borderColor,
+            config.color,
+            config.bgColor,
+          )}
+        >
+          <Icon
+            className={cn(
+              "w-4 h-4",
+              result.status === "running" && "animate-spin",
+            )}
+          />
+        </div>
+      </div>
+
+      {/* Content Card */}
+      <div className='flex-1 pb-6 min-w-0'>
+        <div
+          className={cn(
+            "group relative overflow-hidden rounded-xl border transition-all duration-200",
+            expanded
+              ? "ring-1 ring-slate-200 dark:ring-slate-800 shadow-md"
+              : "hover:shadow-sm",
+            config.cardBorderColor,
+            config.cardBgColor,
+          )}
+        >
+          {/* Card Header */}
+          <div
+            className='flex items-center justify-between p-3 cursor-pointer select-none'
+            onClick={() => setExpanded(!expanded)}
+          >
+            <div className='flex items-center gap-3'>
+              <div className='flex flex-col'>
+                <span className='font-semibold text-sm text-slate-900 dark:text-slate-100'>
+                  {result.nodeLabel || "未知节点"}
+                </span>
+                <div className='flex items-center gap-2 mt-0.5'>
+                  <span className='text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider bg-white/50 dark:bg-black/20 px-1.5 py-0.5 rounded-sm border border-black/5 dark:border-white/5'>
+                    {result.nodeType}
                   </span>
-                )}
+                  {result.duration && (
+                    <span className='text-[10px] text-slate-400 font-mono'>
+                      {result.duration}ms
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
+
+            {expanded ? (
+              <ChevronDown className='w-4 h-4 text-slate-400' />
+            ) : (
+              <ChevronRight className='w-4 h-4 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300' />
+            )}
           </div>
-          {expanded ? (
-            <ChevronDown className='w-4 h-4 text-slate-400' />
-          ) : (
-            <ChevronRight className='w-4 h-4 text-slate-400' />
+
+          {/* Expanded Content */}
+          {expanded && (
+            <div className='border-t border-black/5 dark:border-white/5 bg-white/50 dark:bg-black/20'>
+              <div className='p-3 space-y-3'>
+                {/* Output */}
+                {result.output !== undefined && result.output !== null && (
+                  <div className='space-y-1.5'>
+                    <div className='flex items-center justify-between'>
+                      <label className='text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1'>
+                        <span className='w-1.5 h-1.5 rounded-full bg-slate-400' />
+                        Result Output
+                      </label>
+                    </div>
+                    <div
+                      className='max-w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md p-2.5 text-xs font-mono text-slate-600 dark:text-slate-300 overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto break-all shadow-sm cursor-text'
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {formattedOutput}
+                    </div>
+                  </div>
+                )}
+
+                {/* Error */}
+                {result.error && (
+                  <div className='space-y-1.5'>
+                    <label className='text-[10px] font-bold text-red-500 uppercase tracking-wider flex items-center gap-1'>
+                      <span className='w-1.5 h-1.5 rounded-full bg-red-400' />
+                      Error Details
+                    </label>
+                    <div
+                      className='max-w-full bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/50 rounded-md p-2.5 text-xs font-mono text-red-600 dark:text-red-400 break-all cursor-text'
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {formattedError}
+                    </div>
+                  </div>
+                )}
+
+                <div className='flex justify-end pt-1'>
+                  <span className='text-[9px] text-slate-300 dark:text-slate-600 font-mono select-all'>
+                    ID: {result.nodeId}
+                  </span>
+                </div>
+              </div>
+            </div>
           )}
         </div>
-
-        {expanded && (
-          <div className='mt-3 pt-3 border-t border-black/5 dark:border-white/5 space-y-3 animate-in fade-in duration-200'>
-            {/* Output Section */}
-            {result.output !== undefined && result.output !== null && (
-              <div>
-                <div className='text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1'>
-                  Output
-                </div>
-                <div
-                  className='max-w-full bg-white/50 dark:bg-black/20 rounded p-2 text-xs font-mono overflow-x-auto whitespace-pre-wrap max-h-[200px] overflow-y-auto break-all cursor-text select-text'
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {formattedOutput}
-                </div>
-              </div>
-            )}
-
-            {/* Error Section */}
-            {result.error && (
-              <div>
-                <div className='text-[10px] font-semibold text-red-500 uppercase tracking-wider mb-1'>
-                  Error
-                </div>
-                <div
-                  className='max-w-full bg-red-100/50 dark:bg-red-950/30 text-red-600 dark:text-red-400 rounded p-2 text-xs font-mono break-all cursor-text select-text'
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {formattedError}
-                </div>
-              </div>
-            )}
-
-            <div className='text-[9px] text-slate-400 text-right font-mono'>
-              {result.nodeId}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
