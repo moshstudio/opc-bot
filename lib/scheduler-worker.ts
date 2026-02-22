@@ -31,6 +31,14 @@ export async function syncScheduledWorkflows() {
           not: null,
         },
         isActive: true,
+        company: {
+          systemConfigs: {
+            some: {
+              key: "BACKGROUND_SCHEDULER_ENABLED",
+              value: "true",
+            },
+          },
+        },
       },
     });
 
@@ -116,8 +124,7 @@ export function initScheduler() {
   syncScheduledWorkflows();
 
   // 每分钟同步一次数据库中的配置变化（或者根据业务需要调整频率）
-  // 也可以在保存员工时手动触发 syncScheduledWorkflows
-  cron.schedule("*/5 * * * *", () => {
+  cron.schedule("* * * * *", () => {
     syncScheduledWorkflows();
   });
 }

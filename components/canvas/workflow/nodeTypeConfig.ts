@@ -12,12 +12,9 @@ import {
   Search,
   Bell,
   Brain,
-  HelpCircle,
   ListFilter,
-  CircuitBoard,
   Repeat,
   RefreshCw,
-  ArrowLeftRight,
   FileCode2,
   GitMerge,
   FileSearch,
@@ -189,16 +186,6 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
       timeout: 60000,
     },
   },
-  question_understanding: {
-    typeLabel: "问题理解",
-    defaultLabel: "问题理解",
-    icon: HelpCircle,
-    color: "blue",
-    gradientPair: "cyan",
-    tab: "node",
-    menuLabel: "问题理解",
-    menuDesc: "对用户输入进行语义理解与改写",
-  },
   question_classifier: {
     typeLabel: "问题分类",
     defaultLabel: "问题分类器",
@@ -220,16 +207,7 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
       memory: { enabled: false, window: 5 },
     },
   },
-  logic: {
-    typeLabel: "逻辑",
-    defaultLabel: "逻辑节点",
-    icon: CircuitBoard,
-    color: "yellow",
-    gradientPair: "amber",
-    tab: "node",
-    menuLabel: "逻辑",
-    menuDesc: "执行逻辑运算和判断",
-  },
+
   condition: {
     typeLabel: "条件分支",
     defaultLabel: "条件分支",
@@ -249,6 +227,12 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     tab: "node",
     menuLabel: "迭代",
     menuDesc: "对列表中的每个元素执行操作",
+    defaultData: {
+      iterationVariable: "",
+      processingMode: "sequential",
+      errorHandling: "terminate",
+      workflowId: "",
+    },
   },
   loop: {
     typeLabel: "循环",
@@ -260,16 +244,7 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     menuLabel: "循环",
     menuDesc: "重复执行直到满足条件",
   },
-  transform: {
-    typeLabel: "转换",
-    defaultLabel: "数据转换",
-    icon: ArrowLeftRight,
-    color: "cyan",
-    gradientPair: "blue",
-    tab: "node",
-    menuLabel: "转换",
-    menuDesc: "对数据进行格式转换",
-  },
+
   code: {
     typeLabel: "代码执行",
     defaultLabel: "代码执行",
@@ -355,16 +330,7 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     menuLabel: "参数提取器",
     menuDesc: "从文本中提取结构化参数",
   },
-  tool_node: {
-    typeLabel: "工具",
-    defaultLabel: "工具调用",
-    icon: Wrench,
-    color: "rose",
-    gradientPair: "orange",
-    tab: "node",
-    menuLabel: "工具",
-    menuDesc: "调用已注册的工具执行操作",
-  },
+
   http_request: {
     typeLabel: "HTTP 请求",
     defaultLabel: "HTTP 请求",

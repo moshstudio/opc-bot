@@ -19,6 +19,7 @@ import {
   Shield,
   Workflow,
   Clock,
+  Loader2,
 } from "lucide-react";
 import {
   Tooltip,
@@ -268,9 +269,22 @@ export function EmployeeListPanel({
                         </div>
                       </div>
 
-                      <p className='text-[10px] text-slate-500 mt-0.5'>
-                        {roleLabels[emp.role] || emp.role}
-                      </p>
+                      <div className='flex items-center gap-2 mt-0.5'>
+                        <p className='text-[10px] text-slate-500 truncate'>
+                          {roleLabels[emp.role] || emp.role}
+                        </p>
+                        {emp.status === "working" ? (
+                          <span className='inline-flex items-center gap-1 text-[9px] text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.2 rounded-full font-medium'>
+                            <Loader2 className='w-2.5 h-2.5 animate-spin' />
+                            处理中
+                          </span>
+                        ) : (
+                          <span className='inline-flex items-center gap-1 text-[9px] text-slate-400 bg-slate-50 dark:bg-slate-900/20 px-1.5 py-0.2 rounded-full'>
+                            <div className='w-1 h-1 rounded-full bg-emerald-500 animate-pulse' />
+                            空闲
+                          </span>
+                        )}
+                      </div>
 
                       {/* Meta info */}
                       <div className='flex items-center gap-2 mt-1.5'>

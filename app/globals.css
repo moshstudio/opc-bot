@@ -140,4 +140,36 @@
   .scrollbar-custom::-webkit-scrollbar-thumb:hover {
     background: color-mix(in srgb, currentColor, transparent 70%);
   }
+
+  @keyframes edge-flow {
+    from {
+      stroke-dashoffset: 10;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  .animate-edge-flow {
+    animation: edge-flow 0.5s linear infinite;
+  }
+
+  @keyframes edge-pulse {
+    0% {
+      stroke-width: 2;
+      stroke-opacity: 0.6;
+    }
+    50% {
+      stroke-width: 6;
+      stroke-opacity: 0.1;
+    }
+    100% {
+      stroke-width: 2;
+      stroke-opacity: 0.6;
+    }
+  }
+
+  .animate-edge-pulse {
+    animation: edge-pulse 2s ease-in-out infinite;
+  }
 }

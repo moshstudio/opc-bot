@@ -680,20 +680,20 @@ const executors: Record<WorkflowNodeType, NodeExecutor> = {
   knowledge_retrieval: knowledgeRetrievalExecutor,
   output: outputExecutor,
   agent: passthroughExecutor, // TODO: 实现 agent 执行逻辑
-  question_understanding: passthroughExecutor, // TODO
+
   question_classifier: passthroughExecutor, // TODO
-  logic: passthroughExecutor, // TODO
+
   condition: conditionExecutor,
   iteration: passthroughExecutor, // TODO
   loop: passthroughExecutor, // TODO
-  transform: passthroughExecutor, // TODO
+
   code: codeExecutor,
   template_transform: textTemplateExecutor,
   variable_aggregator: variableAggregatorExecutor,
   document_extractor: passthroughExecutor, // TODO
   variable_assignment: variableAssignmentExecutor,
   parameter_extractor: passthroughExecutor, // TODO
-  tool_node: passthroughExecutor, // TODO
+
   http_request: httpRequestExecutor,
   list_operation: listOperationExecutor,
   // 工具

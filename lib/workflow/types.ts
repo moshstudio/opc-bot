@@ -13,20 +13,16 @@ export type WorkflowNodeType =
   | "knowledge_retrieval" // 知识检索
   | "output" // 输出节点
   | "agent" // Agent 智能体
-  | "question_understanding" // 问题理解
   | "question_classifier" // 问题分类器
-  | "logic" // 逻辑节点
   | "condition" // 条件分支
   | "iteration" // 迭代
   | "loop" // 循环
-  | "transform" // 数据转换
   | "code" // 代码执行
   | "template_transform" // 模板转换
   | "variable_aggregator" // 变量聚合器
   | "document_extractor" // 文档提取器
   | "variable_assignment" // 变量赋值
   | "parameter_extractor" // 参数提取器
-  | "tool_node" // 工具调用节点
   | "http_request" // HTTP 请求
   | "list_operation" // 列表操作
   // 工具 (Tool) - 插件 / 自定义工具 / 工作流 / MCP
@@ -94,9 +90,6 @@ export interface WorkflowNodeData {
   agentType?: string;
   agentTools?: string[];
 
-  // 问题理解
-  rewriteStrategy?: string;
-
   // 问题分类器
   categories?: string[];
   classificationPrompt?: string;
@@ -125,6 +118,8 @@ export interface WorkflowNodeData {
 
   // 迭代 / 循环
   iterationVariable?: string;
+  processingMode?: "sequential" | "parallel";
+  errorHandling?: "terminate" | "continue" | "remove_failed";
   maxIterations?: number;
   loopCondition?: string;
 
@@ -181,14 +176,6 @@ export interface WorkflowNodeData {
   recipient?: string;
   subject?: string;
   content?: string;
-
-  // 转换
-  transformExpression?: string;
-  transformType?: "json" | "text" | "number";
-
-  // 逻辑
-  logicType?: "and" | "or" | "not" | "custom";
-  logicExpression?: string;
 }
 
 /** 工作流节点 */

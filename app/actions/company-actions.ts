@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { cookies } from "next/headers";
 import { ROLE_TEMPLATES } from "@/components/canvas/add-employee/templates";
+import { setActiveCompany } from "@/lib/active-state";
 
 const prisma = db;
 
@@ -42,6 +43,7 @@ export async function getOrCreateCompany() {
       // We can't always set cookies in all contexts, but Next.js allows it in Server Actions
       try {
         cookieStore.set("activeCompanyId", company.id);
+        setActiveCompany(company.id);
       } catch {
         // Ignore if headers are already sent
       }
@@ -97,6 +99,7 @@ export async function switchCompany(companyId: string) {
   try {
     const cookieStore = await cookies();
     cookieStore.set("activeCompanyId", companyId);
+    setActiveCompany(companyId);
     return { success: true };
   } catch (error: any) {
     console.error("Failed to switch company:", error);
@@ -261,6 +264,38 @@ export async function checkCurrentCompanyStatus() {
       });
     }
 
+    // 检查核心大脑 (Brain) 配置
+    const brainModelConfig = await prisma.systemConfig.findUnique({
+      where: {
+        companyId_key: {
+          companyId: activeCompanyId,
+          key: "BRAIN_MODEL_ID",
+        },
+      },
+    });
+
+    if (!brainModelConfig?.value) {
+      messages.push({
+        type: "error",
+        message: "核心大脑模型尚未配置，建议尽快完成设置以避免后续任务处理中断",
+        actionText: "去配置大脑",
+        actionLink: "/dashboard/settings",
+      });
+    } else {
+      // 验证配置的模型是否有效
+      const aiModel = await prisma.aiModel.findUnique({
+        where: { id: brainModelConfig.value },
+      });
+      if (!aiModel || !aiModel.isActive) {
+        messages.push({
+          type: "error",
+          message: "配置的核心大脑模型已失效或不存在，请重新指定",
+          actionText: "去配置大脑",
+          actionLink: "/dashboard/settings",
+        });
+      }
+    }
+
     // Check specific employee configurations
     const employees = await prisma.employee.findMany({
       where: { companyId: activeCompanyId, isActive: true },
@@ -327,5 +362,57 @@ export async function checkCurrentCompanyStatus() {
       status: "error",
       messages: [{ type: "error", message: "状态检查失败" }],
     };
+  }
+}
+
+export async function getBackgroundSchedulerStatus() {
+  try {
+    const res = await getOrCreateCompany();
+    if (!res.success || !res.company) return false;
+
+    const config = await db.systemConfig.findUnique({
+      where: {
+        companyId_key: {
+          companyId: res.company.id,
+          key: "BACKGROUND_SCHEDULER_ENABLED",
+        },
+      },
+    });
+
+    return config?.value === "true";
+  } catch (error) {
+    console.error("Error fetching background scheduler status:", error);
+    return false;
+  }
+}
+
+export async function setBackgroundSchedulerStatus(enabled: boolean) {
+  try {
+    const res = await getOrCreateCompany();
+    if (!res.success || !res.company) {
+      throw new Error("Unable to determine active company");
+    }
+
+    await db.systemConfig.upsert({
+      where: {
+        companyId_key: {
+          companyId: res.company.id,
+          key: "BACKGROUND_SCHEDULER_ENABLED",
+        },
+      },
+      update: {
+        value: enabled ? "true" : "false",
+      },
+      create: {
+        companyId: res.company.id,
+        key: "BACKGROUND_SCHEDULER_ENABLED",
+        value: enabled ? "true" : "false",
+      },
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error setting background scheduler status:", error);
+    return { success: false, error: (error as any).message };
   }
 }

@@ -64,6 +64,8 @@ export async function executeMastraWorkflow(
         return steps.questionClassifierStep;
       case "variable_aggregator":
         return steps.variableAggregatorStep;
+      case "iteration":
+        return steps.iterationStep;
       default:
         console.warn(
           `[Mastra] Unknown node type: ${node.type}, using startStep`,
@@ -95,11 +97,15 @@ export async function executeMastraWorkflow(
   // 仅仅从触发器节点开始执行
   const TRIGGER_TYPES = ["start", "cron_trigger", "webhook"];
   let queue = definition.nodes.filter(
-    (n) => (inDegree.get(n.id) || 0) === 0 && TRIGGER_TYPES.includes(n.type),
+    (n) =>
+      (inDegree.get(n.id) || 0) === 0 &&
+      TRIGGER_TYPES.includes(n.type) &&
+      !(n as any).parentId,
   );
 
   // 如果没有发现可运行的触发器，但存在节点，则提示错误（支持 DAG 的严格起始点）
-  if (queue.length === 0 && definition.nodes.length > 0) {
+  const topLevelNodes = definition.nodes.filter((n) => !(n as any).parentId);
+  if (queue.length === 0 && topLevelNodes.length > 0) {
     throw new Error(
       "工作流缺少开始节点或触发器不可达 (请确保至少有一个触发器且未被依赖)",
     );
@@ -139,6 +145,8 @@ export async function executeMastraWorkflow(
               provider: employeeConfig?.provider,
               ...configData,
               ...incomingData,
+              __definition__: definition,
+              id: node.id,
             };
 
             if (incomingData.output && !mergedInput.input) {

@@ -23,13 +23,7 @@ export function SystemStatusIndicator() {
       throw new Error("Failed to check status");
     },
     {
-      refreshInterval: (data) => {
-        if (!data) return 3000;
-        const isNormal =
-          data.status === "normal" &&
-          (!data.messages || data.messages.length === 0);
-        return isNormal ? 0 : 3000;
-      },
+      refreshInterval: 5000,
       revalidateOnFocus: true,
     },
   );

@@ -98,6 +98,27 @@ function MarketplaceItem() {
   );
 }
 
+const NODE_SUBCATEGORY_MAPPING: Record<string, string> = {
+  llm: "基础",
+  knowledge_retrieval: "基础",
+  output: "基础",
+  agent: "基础",
+  question_classifier: "问题理解",
+  condition: "逻辑",
+  iteration: "逻辑",
+  loop: "逻辑",
+  code: "转换",
+  template_transform: "转换",
+  variable_aggregator: "转换",
+  document_extractor: "转换",
+  variable_assignment: "转换",
+  parameter_extractor: "转换",
+  http_request: "工具",
+  list_operation: "工具",
+};
+
+const CATEGORY_ORDER = ["基础", "问题理解", "逻辑", "转换", "工具", "其它"];
+
 export function AddNodePanel({
   open,
   onClose,
@@ -185,14 +206,45 @@ export function AddNodePanel({
         >
           <div className='flex flex-col gap-0.5 px-1'>
             {filteredNodes.length > 0 ? (
-              filteredNodes.map(([type, theme]) => (
-                <NodeItem
-                  key={type}
-                  type={type}
-                  theme={theme}
-                  onSelect={() => onSelectNode(type, theme)}
-                />
-              ))
+              activeTab === "node" ? (
+                CATEGORY_ORDER.map((category) => {
+                  const nodes = filteredNodes.filter(
+                    ([type]) =>
+                      (NODE_SUBCATEGORY_MAPPING[type] || "其它") === category,
+                  );
+                  if (nodes.length === 0) return null;
+
+                  return (
+                    <div
+                      key={category}
+                      className='mb-2 last:mb-0'
+                    >
+                      <div className='px-2 py-1.5 text-xs font-semibold text-slate-500/80 dark:text-slate-400/80'>
+                        {category}
+                      </div>
+                      <div className='flex flex-col gap-0.5'>
+                        {nodes.map(([type, theme]) => (
+                          <NodeItem
+                            key={type}
+                            type={type}
+                            theme={theme}
+                            onSelect={() => onSelectNode(type, theme)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                filteredNodes.map(([type, theme]) => (
+                  <NodeItem
+                    key={type}
+                    type={type}
+                    theme={theme}
+                    onSelect={() => onSelectNode(type, theme)}
+                  />
+                ))
+              )
             ) : (
               <div className='flex flex-col items-center justify-center py-10 text-center px-4'>
                 <div className='w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-3'>

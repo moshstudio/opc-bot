@@ -1,26 +1,31 @@
 import { db } from "@/lib/db";
 import { getMastraAgent } from "@/lib/mastra/agents";
 import { createNotification } from "./notification";
+import { dispatchSubTasks } from "./task-executor";
+import { getActiveCompanyId } from "@/lib/active-state";
 
 // System prompt for Brain Center
 const BRAIN_SYSTEM_PROMPT = `你是一个高级企业大脑中枢架构师。你的老板提出了一个任务需求。
 当前，你的公司中包含一组拥有不同技能和配置的员工角色。
-请根据你的可用的员工列表，仔细思考并将该需求拆解为多个子任务（1-5个）。
-由于这是一人公司模拟器的后端 AI 调度核心，请高度自动化和精确！
+请根据你可用的“员工阵容”及其“职责描述”，仔细思考并将该需求拆解为多个子任务（1-5个）。
+
+分配原则：
+1. **职责契合**：必须根据员工的“职责描述”来分配任务。例如：涉及代码架构或数据库的应分配给“全栈工程师”，涉及线上部署或 K8s 的应分配给“DevOps 工程师”，涉及总结监控的应分配给“助理”。
+2. **角色一致性**：在返回的 JSON 中，assigneeRole 必须填写下方员工列表中对应的【角色】字段，以便系统自动指派。
 
 每个子任务必须明确：
 1. 它的目标是什么？
 2. 它的执行标准或需要生成的产物是什么？
-3. 分配给哪一位员工（请使用员工的唯一角色/名称，如果找不到完全匹配，请指定最合适的那个员工或者留空让系统决定）。
+3. 分配给哪一位员工（务必使用下方列表中提供的【角色】）。
 
 你需要始终返回合法的 JSON 格式。返回格式如下：
 {
-  "analysis": "对老板需求的简短理解分析",
+  "analysis": "对老板需求的理解分析，以及这样进行任务拆解和员工分配的理由",
   "subTasks": [
     {
       "title": "清晰的任务标题",
       "description": "具体的执行说明，明确任务的前置条件和交付标准",
-      "assigneeRole": "期望指派给什么角色的员工。如 frontend、backend、devops 等",
+      "assigneeRole": "必须匹配下方员工列表中的【角色】字段",
       "dependencies": ["如果该任务需要等待其他某个子任务完成，在这里写明前置子任务标题，否则为空白数组"]
     }
   ]
@@ -52,6 +57,9 @@ export async function processTaskByBrain(
       where: { id: parentTaskId, companyId },
     });
 
+    // 权限检查
+    await checkExecutionAllowed(companyId, parentTaskId);
+
     if (!topTask || topTask.status !== "PENDING") {
       console.log(
         "[Brain Center] Task not found or already processed:",
@@ -73,9 +81,18 @@ export async function processTaskByBrain(
 
     const employeesSummary = employees
       .map((e) => {
-        return `- 姓名: ${e.name}, 角色: ${e.role}, 状态: ${e.status}`;
+        let responsibilities = "无详细描述";
+        if (e.config) {
+          try {
+            const config = JSON.parse(e.config);
+            responsibilities = config.prompt || "无详细描述";
+          } catch {
+            // ignore parse error
+          }
+        }
+        return `【角色】: ${e.role}\n【姓名】: ${e.name}\n【职责描述】: ${responsibilities}\n【状态】: ${e.status}`;
       })
-      .join("\n");
+      .join("\n\n---\n\n");
 
     const userPrompt = `这是一次大脑调度拆解。\n\n老板布置的任务要求是：\n【标题】${topTask.title}\n【具体说明】${topTask.description || "无具体说明"}\n\n【本公司的员工阵容如下】：\n${employeesSummary}\n\n请分析此任务，并给出必须拆解的 Json 执行计划。`;
 
@@ -161,11 +178,21 @@ export async function processTaskByBrain(
 
     // 5. 持久化子任务到数据库
     for (const st of plan.subTasks) {
-      // 尝试匹配员工
+      // 尝试匹配员工（精确匹配 → 包含匹配 → 模糊匹配）
       let assignedToId = null;
-      const matchedEmp = employees.find(
-        (e) => e.role === st.assigneeRole || e.name.includes(st.assigneeRole),
-      );
+      const role = st.assigneeRole?.toLowerCase() || "";
+      const matchedEmp =
+        employees.find((e) => e.role.toLowerCase() === role) ||
+        employees.find(
+          (e) =>
+            e.role.toLowerCase().includes(role) ||
+            role.includes(e.role.toLowerCase()),
+        ) ||
+        employees.find(
+          (e) =>
+            e.name.toLowerCase().includes(role) ||
+            role.includes(e.name.toLowerCase()),
+        );
       if (matchedEmp) {
         assignedToId = matchedEmp.id;
       }
@@ -187,7 +214,7 @@ export async function processTaskByBrain(
     await db.task.update({
       where: { id: topTask.id },
       data: {
-        status: "IN_PROGRESS", // 或者自定义状态 "DISPATCHED"
+        status: "IN_PROGRESS",
         context: JSON.stringify({ brainAnalysis: plan.analysis }),
       },
     });
@@ -195,19 +222,59 @@ export async function processTaskByBrain(
     // 通知用户
     await createNotification({
       companyId,
-      title: `🧠 任务已由大脑中枢拆解: ${topTask.title}`,
-      content: `中枢分析结果: ${plan.analysis}\n已拆解为 ${plan.subTasks.length} 个子任务。`,
+      title: `任务已由大脑中枢拆解: ${topTask.title}`,
+      content: `中枢分析结果: ${plan.analysis}\n已拆解为 ${plan.subTasks.length} 个子任务，正在自动调度执行...`,
       type: "info",
       source: "system",
     });
 
     console.log(
-      `[Brain Center] Successfully dispatched task ${topTask.id} into ${plan.subTasks.length} subtasks.`,
+      `[Brain Center] Successfully split task ${topTask.id} into ${plan.subTasks.length} subtasks. Starting dispatch...`,
     );
-  } catch (error) {
+
+    // 6. 自动调度执行子任务（异步）
+    dispatchSubTasks(topTask.id, companyId).catch((err) => {
+      console.error("[Brain Center] Auto-dispatch failed:", err);
+    });
+  } catch (error: any) {
+    if (error.message === "EXECUTION_PAUSED") {
+      await db.task
+        .update({ where: { id: parentTaskId }, data: { status: "PAUSED" } })
+        .catch(() => {});
+      return;
+    }
     console.error("[Brain Center] Error processing task:", error);
     await db.task
       .update({ where: { id: parentTaskId }, data: { status: "FAILED" } })
       .catch(() => {});
+  }
+}
+
+/**
+ * 检查是否允许执行（基于后台运行设置和活跃状态）
+ */
+async function checkExecutionAllowed(companyId: string, taskId?: string) {
+  if (taskId) {
+    const task = await db.task.findUnique({
+      where: { id: taskId },
+      select: { status: true },
+    });
+    if (task?.status === "PAUSED") throw new Error("EXECUTION_PAUSED");
+  }
+
+  const config = await db.systemConfig.findUnique({
+    where: {
+      companyId_key: {
+        companyId,
+        key: "BACKGROUND_SCHEDULER_ENABLED",
+      },
+    },
+  });
+
+  const backgroundEnabled = config?.value === "true";
+  const isActive = getActiveCompanyId() === companyId;
+
+  if (!backgroundEnabled && !isActive) {
+    throw new Error("EXECUTION_PAUSED");
   }
 }

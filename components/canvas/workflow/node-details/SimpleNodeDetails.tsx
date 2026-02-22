@@ -52,23 +52,101 @@ export const WebhookDetails: React.FC<WebhookDetailsProps> = ({ nodeId }) => {
   );
 };
 
-// --- Iteration Node ---
 export const IterationDetails: React.FC<NodeDetailContentProps> = ({
   formData,
   handleChange,
+  upstreamVariables = [],
 }) => {
   return (
     <>
       <div className='space-y-2'>
-        <Label>迭代变量</Label>
-        <Input
+        <Label>数组输入 / 迭代变量</Label>
+        <Select
           value={formData.iterationVariable || ""}
-          onChange={(e) => handleChange("iterationVariable", e.target.value)}
-          placeholder='输入列表变量名...'
-        />
+          onValueChange={(v) => handleChange("iterationVariable", v)}
+        >
+          <SelectTrigger className='h-8 text-xs bg-white dark:bg-slate-950'>
+            <SelectValue placeholder='选择列表变量或引用' />
+          </SelectTrigger>
+          <SelectContent>
+            {upstreamVariables.map((v: any) => (
+              <SelectItem
+                key={v.value}
+                value={v.value}
+              >
+                <span className='text-slate-500 mr-2'>[{v.group}]</span>
+                {v.label}
+              </SelectItem>
+            ))}
+            <SelectItem value='__input__'>[系统] 用户原始输入</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
-      <div className='p-3 bg-teal-50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/30 rounded-lg text-xs text-teal-700 dark:text-teal-400'>
-        迭代节点会对输入列表的每个元素执行后续子流程。
+
+      <div className='space-y-4 pt-2'>
+        <div className='space-y-2'>
+          <Label className='text-xs font-semibold'>处理模式</Label>
+          <Select
+            value={formData.processingMode || "sequential"}
+            onValueChange={(v) => handleChange("processingMode", v)}
+          >
+            <SelectTrigger className='rounded-xl'>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className='rounded-xl'>
+              <SelectItem value='sequential'>
+                <div className='flex flex-col'>
+                  <span>顺序模式</span>
+                  <span className='text-[10px] text-slate-500'>
+                    逐一处理，支持流式结果
+                  </span>
+                </div>
+              </SelectItem>
+              <SelectItem value='parallel'>
+                <div className='flex flex-col'>
+                  <span>并行模式</span>
+                  <span className='text-[10px] text-slate-500'>
+                    并发处理，更快的执行速度
+                  </span>
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className='space-y-2'>
+          <Label className='text-xs font-semibold'>错误处理</Label>
+          <Select
+            value={formData.errorHandling || "terminate"}
+            onValueChange={(v) => handleChange("errorHandling", v)}
+          >
+            <SelectTrigger className='rounded-xl'>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className='rounded-xl'>
+              <SelectItem value='terminate'>终止 (出错时停止)</SelectItem>
+              <SelectItem value='continue'>错误时继续 (输出 null)</SelectItem>
+              <SelectItem value='remove_failed'>移除失败结果 (跳过)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className='p-3 bg-teal-50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/30 rounded-xl text-xs text-teal-700 dark:text-teal-400 mt-4'>
+        <div className='font-semibold mb-1 flex items-center gap-2'>
+          <div className='w-1.5 h-1.5 rounded-full bg-teal-500'></div>
+          内置变量说明
+        </div>
+        <div className='space-y-1 mt-2 text-[11px] opacity-90 leading-relaxed font-mono'>
+          <div>
+            • items[object]:{" "}
+            <span className='font-sans'>当前处理的数组元素</span>
+          </div>
+          <div>
+            • index[number]:{" "}
+            <span className='font-sans'>当前迭代索引 (从0开始)</span>
+          </div>
+        </div>
       </div>
     </>
   );
@@ -339,111 +417,6 @@ export const DocumentExtractorDetails: React.FC<NodeDetailContentProps> = ({
           placeholder='定义需要提取的字段...'
           className='min-h-[80px] font-mono'
         />
-      </div>
-    </>
-  );
-};
-
-// --- Transform Node ---
-export const TransformDetails: React.FC<NodeDetailContentProps> = ({
-  formData,
-  handleChange,
-}) => {
-  return (
-    <>
-      <div className='space-y-2'>
-        <Label>转换类型</Label>
-        <Select
-          value={formData.transformType || "json"}
-          onValueChange={(v) => handleChange("transformType", v)}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value='json'>JSON 转换</SelectItem>
-            <SelectItem value='text'>文本转换</SelectItem>
-            <SelectItem value='number'>数值转换</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className='space-y-2'>
-        <Label>转换表达式</Label>
-        <Input
-          value={formData.transformExpression || ""}
-          onChange={(e) => handleChange("transformExpression", e.target.value)}
-          placeholder='e.g. JSON.parse(input).data'
-          className='font-mono'
-        />
-      </div>
-    </>
-  );
-};
-
-// --- Logic Node ---
-export const LogicDetails: React.FC<NodeDetailContentProps> = ({
-  formData,
-  handleChange,
-}) => {
-  return (
-    <>
-      <div className='space-y-2'>
-        <Label>逻辑类型</Label>
-        <Select
-          value={formData.logicType || "and"}
-          onValueChange={(v) => handleChange("logicType", v)}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value='and'>AND (与)</SelectItem>
-            <SelectItem value='or'>OR (或)</SelectItem>
-            <SelectItem value='not'>NOT (非)</SelectItem>
-            <SelectItem value='custom'>自定义表达式</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      {formData.logicType === "custom" && (
-        <div className='space-y-2'>
-          <Label>表达式</Label>
-          <Input
-            value={formData.logicExpression || ""}
-            onChange={(e) => handleChange("logicExpression", e.target.value)}
-            placeholder='JavaScript 布尔表达式'
-            className='font-mono'
-          />
-        </div>
-      )}
-    </>
-  );
-};
-
-// --- Question Understanding Node ---
-export const QuestionUnderstandingDetails: React.FC<NodeDetailContentProps> = ({
-  formData,
-  handleChange,
-}) => {
-  return (
-    <>
-      <div className='space-y-2'>
-        <Label>改写策略</Label>
-        <Select
-          value={formData.rewriteStrategy || "clarify"}
-          onValueChange={(v) => handleChange("rewriteStrategy", v)}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value='clarify'>澄清意图</SelectItem>
-            <SelectItem value='expand'>扩展补全</SelectItem>
-            <SelectItem value='simplify'>简化精炼</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className='p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 rounded-lg text-xs text-blue-700 dark:text-blue-400'>
-        问题理解节点会对用户输入进行语义分析和改写，使后续节点更容易处理。
       </div>
     </>
   );

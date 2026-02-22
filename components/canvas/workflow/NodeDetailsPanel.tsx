@@ -42,9 +42,6 @@ import {
   ListOperationDetails,
   ParameterExtractorDetails,
   DocumentExtractorDetails,
-  TransformDetails,
-  LogicDetails,
-  QuestionUnderstandingDetails,
   SubWorkflowDetails,
   McpToolDetails,
   CustomToolDetails,
@@ -252,18 +249,12 @@ export const NodeDetailsPanel = memo(
           return <ParameterExtractorDetails {...detailProps} />;
         case "document_extractor":
           return <DocumentExtractorDetails {...detailProps} />;
-        case "transform":
-          return <TransformDetails {...detailProps} />;
-        case "logic":
-          return <LogicDetails {...detailProps} />;
-        case "question_understanding":
-          return <QuestionUnderstandingDetails {...detailProps} />;
+
         case "sub_workflow":
           return <SubWorkflowDetails {...detailProps} />;
         case "mcp_tool":
           return <McpToolDetails {...detailProps} />;
         case "custom_tool":
-        case "tool_node":
           return <CustomToolDetails {...detailProps} />;
         case "plugin":
           return <PluginDetails {...detailProps} />;
@@ -313,13 +304,13 @@ export const NodeDetailsPanel = memo(
       return str;
     };
 
-    const nodeOutput = (node.data as any).output;
+    const nodeOutput = (node.data as any)?.output;
     const formattedNodeOutput = useMemo(
       () => renderOutput(nodeOutput),
       [nodeOutput],
     );
 
-    const formattedNodeError = (node.data as any).error;
+    const formattedNodeError = (node.data as any)?.error;
 
     return (
       <div className='absolute right-0 top-0 bottom-0 w-[480px] bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200'>
@@ -341,7 +332,7 @@ export const NodeDetailsPanel = memo(
             </div>
             <div className='overflow-hidden'>
               <h3 className='font-bold text-slate-900 dark:text-slate-100 text-sm truncate'>
-                {String(node.data.label || "节点设置")}
+                {String(node?.data?.label || "节点设置")}
               </h3>
               <p className='text-[10px] text-slate-400 font-mono truncate'>
                 {node.id}
@@ -361,8 +352,8 @@ export const NodeDetailsPanel = memo(
         {/* Content */}
         <div className='flex-1 overflow-y-auto p-5 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800 space-y-6'>
           {/* Node Status & Results */}
-          {(node.data as any).status &&
-            (node.data as any).status !== "idle" && (
+          {(node?.data as any)?.status &&
+            (node?.data as any)?.status !== "idle" && (
               <div className='p-4 rounded-xl border space-y-3 bg-slate-50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800'>
                 <div className='flex items-center justify-between'>
                   <Label className='text-[10px] font-bold text-slate-500 uppercase tracking-wider'>
@@ -371,16 +362,16 @@ export const NodeDetailsPanel = memo(
                   <div
                     className={cn(
                       "text-[10px] px-2 py-0.5 rounded-full font-bold uppercase",
-                      (node.data as any).status === "success"
+                      (node?.data as any)?.status === "success"
                         ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
-                        : (node.data as any).status === "error"
+                        : (node?.data as any)?.status === "error"
                           ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400"
                           : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",
                     )}
                   >
-                    {(node.data as any).status === "success"
+                    {(node?.data as any)?.status === "success"
                       ? "成功"
-                      : (node.data as any).status === "error"
+                      : (node?.data as any)?.status === "error"
                         ? "失败"
                         : "运行中"}
                   </div>
@@ -399,8 +390,8 @@ export const NodeDetailsPanel = memo(
             )}
 
           {/* Node Input (Inferred) */}
-          {((node.data as any).status &&
-            (node.data as any).status !== "idle") ||
+          {((node?.data as any)?.status &&
+            (node?.data as any)?.status !== "idle") ||
           (["start", "cron_trigger", "webhook"].includes(node.type || "") &&
             lastTestInput) ? (
             <div className='p-4 rounded-xl border space-y-3 bg-slate-50 dark:bg-slate-900/50 border-slate-100 dark:border-slate-800'>
@@ -419,9 +410,9 @@ export const NodeDetailsPanel = memo(
                             className='mb-2 last:mb-0 border-b last:border-0 border-slate-100 dark:border-slate-800 pb-2 last:pb-0'
                           >
                             <div className='text-[10px] text-slate-400 mb-1'>
-                              来自: {String(n.data.label || n.type)}
+                              来自: {String(n?.data?.label || n.type)}
                             </div>
-                            <div>{renderOutput((n.data as any).output)}</div>
+                            <div>{renderOutput((n?.data as any)?.output)}</div>
                           </div>
                         ))
                     : "(无上游输入)"}
@@ -486,7 +477,7 @@ export const NodeDetailsPanel = memo(
                           </span>
                         </div>
                         <span className='font-medium text-slate-600 dark:text-slate-400 truncate'>
-                          {String(n.data.label || n.type)}
+                          {String(n?.data?.label || n.type)}
                         </span>
                       </div>
                       <code

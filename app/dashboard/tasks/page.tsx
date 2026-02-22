@@ -1,5 +1,5 @@
 import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
-import { TaskBoard } from "@/components/tasks/TaskBoard";
+import { TasksClient } from "@/components/tasks/TasksClient";
 import { getTasks } from "@/app/actions/task-actions";
 import { getOrCreateCompany } from "@/app/actions/company-actions";
 
@@ -28,7 +28,7 @@ export default async function TasksPage() {
       </div>
 
       <div className='flex-1 min-h-0'>
-        <TaskBoard initialTasks={tasks} />
+        <TasksClient initialTasks={tasks} companyId={companyId} />
       </div>
     </div>
   );

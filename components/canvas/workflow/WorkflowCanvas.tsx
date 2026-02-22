@@ -1,6 +1,13 @@
 "use client";
 
-import React, { useCallback, useState, useEffect, useRef } from "react";
+import React, {
+  useCallback,
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+} from "react";
+import { useWorkflowSave } from "@/hooks/use-workflow-save";
 import {
   ReactFlow,
   Controls,
@@ -35,7 +42,7 @@ import { AddNodePanel } from "./AddNodePanel";
 import { WorkflowNodeTypes } from "./WorkflowNodeTypes";
 import { NODE_THEMES, type NodeTheme } from "./nodeTypeConfig";
 import { Button } from "@/components/ui/button";
-import { Play, Loader2, Save, Plus, Terminal } from "lucide-react";
+import { Play, Loader2, Save, Plus, Terminal, Check } from "lucide-react";
 import { toast } from "sonner";
 import {
   WorkflowDefinition,
@@ -46,6 +53,12 @@ import {
 } from "@/lib/workflow/types";
 import { TestRunDialog } from "./TestRunDialog";
 import { TestRunDrawer } from "./TestRunDrawer";
+import CustomEdge from "./CustomEdge";
+import { SubNodeContext } from "./SubNodeContext";
+
+const edgeTypes = {
+  workflow: CustomEdge,
+};
 
 const EDGE_COLORS: Record<string, string> = {
   emerald: "#10b981",
@@ -129,6 +142,7 @@ function WorkflowCanvasContent({
       return {
         ...e,
         animated: true,
+        type: "workflow",
         style: {
           ...(e as any).style,
           stroke: getEdgeColor(sourceNode, targetNode, e.sourceHandle),
@@ -201,11 +215,7 @@ function WorkflowCanvasContent({
 
     setNodes(previousState.nodes);
     setEdges(previousState.edges);
-    onSave({
-      nodes: previousState.nodes as any as WorkflowNode[],
-      edges: previousState.edges as any as WorkflowEdge[],
-    });
-  }, [history, setNodes, setEdges, onSave]);
+  }, [history, setNodes, setEdges]);
 
   const redo = useCallback(() => {
     if (history.future.length === 0) return;
@@ -225,11 +235,7 @@ function WorkflowCanvasContent({
 
     setNodes(nextState.nodes);
     setEdges(nextState.edges);
-    onSave({
-      nodes: nextState.nodes as any as WorkflowNode[],
-      edges: nextState.edges as any as WorkflowEdge[],
-    });
-  }, [history, setNodes, setEdges, onSave]);
+  }, [history, setNodes, setEdges]);
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -274,9 +280,43 @@ function WorkflowCanvasContent({
   const [testResult, setTestResult] = useState<WorkflowExecutionResult | null>(
     null,
   );
+  const { saveStatus, handleSave } = useWorkflowSave({
+    nodes,
+    edges,
+    onSave,
+  });
+
   const [testDrawerOpen, setTestDrawerOpen] = useState(false);
 
-  // 监听节点和连线变化，更新节点“不可达”状态
+  // Sub-node selection state
+  const [detailSubNodeInfo, setDetailSubNodeInfo] = useState<{
+    node: Node;
+    parentId: string;
+    subNodes: Node[];
+    subEdges: Edge[];
+  } | null>(null);
+
+  const [deselectTrigger, setDeselectTrigger] = useState(0);
+
+  const handleSelectSubNode = useCallback(
+    (node: Node, parentId: string, subNodes: Node[], subEdges: Edge[]) => {
+      setSelectedNodeId(null); // Clear main node selection
+      setDetailSubNodeInfo({ node, parentId, subNodes, subEdges });
+      setAddPanelOpen(false);
+    },
+    [],
+  );
+
+  // 监听结构性变化（节点数量、类型、连线情况），更新节点“不可达”状态
+  // 通过 memoize 节点 ID 和类型的组合字符串来避免在节点拖动（仅 position 变化）时触发
+  const nodeIdsAndTypes = nodes.map((n) => `${n.id}:${n.type}`).join(",");
+  const graphStructureKey = useMemo(() => {
+    const edgesKey = edges
+      .map((e) => `${e.source}-${e.target}-${e.sourceHandle || ""}`)
+      .join(",");
+    return `${nodeIdsAndTypes}|${edgesKey}`;
+  }, [nodeIdsAndTypes, edges]);
+
   useEffect(() => {
     const TRIGGER_TYPES = ["start", "cron_trigger", "webhook"];
     const startNodes = nodes.filter((n) =>
@@ -309,26 +349,22 @@ function WorkflowCanvasContent({
     }
 
     // 更新节点数据（仅在状态变化时）
-    const needsUpdate = nodes.some((node) => {
-      const isUnreachable = !reachableIds.has(node.id);
-      return node.data.isUnreachable !== isUnreachable;
+    setNodes((nds) => {
+      let changed = false;
+      const newNodes = nds.map((node) => {
+        const isUnreachable = !reachableIds.has(node.id);
+        if (node.data.isUnreachable !== isUnreachable) {
+          changed = true;
+          return {
+            ...node,
+            data: { ...node.data, isUnreachable },
+          };
+        }
+        return node;
+      });
+      return changed ? newNodes : nds;
     });
-
-    if (needsUpdate) {
-      setNodes((nds) =>
-        nds.map((node) => {
-          const isUnreachable = !reachableIds.has(node.id);
-          if (node.data.isUnreachable !== isUnreachable) {
-            return {
-              ...node,
-              data: { ...node.data, isUnreachable },
-            };
-          }
-          return node;
-        }),
-      );
-    }
-  }, [nodes, edges, setNodes]); // 监听节点和边的变化
+  }, [graphStructureKey, nodes, edges, setNodes]); // 包含 nodes/edges 以满足 lint，但由于 graphStructureKey 比较稳定，逻辑仍能避免冗余执行
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -361,12 +397,24 @@ function WorkflowCanvasContent({
           ...(theme.defaultData || {}),
         },
       };
+      if (type === "iteration") {
+        newNode.style = { width: 800, height: 600 };
+        newNode.data.subNodes = [
+          {
+            id: "start",
+            type: "start",
+            position: { x: 50, y: 150 },
+            data: { label: "开始", status: "idle" },
+            deletable: false,
+          },
+        ];
+        newNode.data.subEdges = [];
+      }
 
       const newNodes = nodes.concat(newNode);
       setNodes(newNodes);
-      onSave({ nodes: newNodes, edges });
     },
-    [nodes, edges, screenToFlowPosition, onSave, setNodes, recordHistory],
+    [nodes, screenToFlowPosition, setNodes, recordHistory],
   );
 
   const onConnect = useCallback(
@@ -377,26 +425,35 @@ function WorkflowCanvasContent({
       const color = getEdgeColor(sourceNode, targetNode, params.sourceHandle);
 
       const newEdges = addEdge(
-        { ...params, animated: true, style: { stroke: color } },
+        {
+          ...params,
+          animated: true,
+          type: "workflow",
+          style: { stroke: color },
+        },
         edges,
       );
       setEdges(newEdges);
-      onSave({
-        nodes: nodes as any as WorkflowNode[],
-        edges: newEdges as any as WorkflowEdge[],
-      });
     },
-    [setEdges, getNode, edges, nodes, onSave, recordHistory],
+    [setEdges, getNode, edges, recordHistory],
   );
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id);
-    // setTestDrawerOpen(false); // 保持测试抽屉开启，方便查看
+    setDetailSubNodeInfo(null); // Clear sub-node selection
+    setDeselectTrigger(Date.now());
     setAddPanelOpen(false);
   }, []);
 
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null);
+    setDetailSubNodeInfo(null); // Clear sub-node selection
+    setDeselectTrigger(Date.now());
+  }, []);
+
+  const onEdgeClick = useCallback(() => {
+    setDetailSubNodeInfo(null); // Clear sub-node selection
+    setDeselectTrigger(Date.now());
   }, []);
 
   const handleUpdateNode = useCallback(
@@ -409,12 +466,8 @@ function WorkflowCanvasContent({
         return node;
       });
       setNodes(newNodes);
-      onSave({
-        nodes: newNodes as any as WorkflowNode[],
-        edges: edges as any as WorkflowEdge[],
-      });
     },
-    [nodes, edges, setNodes, onSave, recordHistory],
+    [nodes, setNodes, recordHistory],
   );
 
   const handleDeleteNode = useCallback(
@@ -427,32 +480,130 @@ function WorkflowCanvasContent({
       setNodes(newNodes);
       setEdges(newEdges);
       setSelectedNodeId(null);
-      onSave({
-        nodes: newNodes as any as WorkflowNode[],
-        edges: newEdges as any as WorkflowEdge[],
+      setDetailSubNodeInfo(null);
+    },
+    [nodes, edges, setNodes, setEdges, recordHistory, setSelectedNodeId],
+  );
+
+  const handleUpdateSubNode = useCallback(
+    (subNodeId: string, data: any) => {
+      if (!detailSubNodeInfo) return;
+      recordHistory();
+
+      const { parentId } = detailSubNodeInfo;
+      const newNodes = nodes.map((node) => {
+        if (node.id === parentId) {
+          const currentSubNodes = (node.data.subNodes as any[]) || [];
+          const updatedSubNodes = currentSubNodes.map((sn) =>
+            sn.id === subNodeId ? { ...sn, data: { ...sn.data, ...data } } : sn,
+          );
+          return {
+            ...node,
+            data: { ...node.data, subNodes: updatedSubNodes },
+          };
+        }
+        return node;
+      });
+
+      setNodes(newNodes);
+      // Update the selection state too so the panel stays fresh
+      setDetailSubNodeInfo((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          node: { ...prev.node, data: { ...prev.node.data, ...data } },
+          subNodes: prev.subNodes.map((sn) =>
+            sn.id === subNodeId ? { ...sn, data: { ...sn.data, ...data } } : sn,
+          ),
+        };
       });
     },
-    [nodes, edges, setNodes, setEdges, onSave, recordHistory],
+    [nodes, detailSubNodeInfo, setNodes, recordHistory],
+  );
+
+  const handleDeleteSubNode = useCallback(
+    (subNodeId: string) => {
+      if (!detailSubNodeInfo) return;
+      recordHistory();
+
+      const { parentId } = detailSubNodeInfo;
+      const newNodes = nodes.map((node) => {
+        if (node.id === parentId) {
+          const currentSubNodes = (node.data.subNodes as any[]) || [];
+          const currentSubEdges = (node.data.subEdges as any[]) || [];
+          const updatedSubNodes = currentSubNodes.filter(
+            (sn) => sn.id !== subNodeId,
+          );
+          const updatedSubEdges = currentSubEdges.filter(
+            (se) => se.source !== subNodeId && se.target !== subNodeId,
+          );
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              subNodes: updatedSubNodes,
+              subEdges: updatedSubEdges,
+            },
+          };
+        }
+        return node;
+      });
+
+      setNodes(newNodes);
+      setDetailSubNodeInfo(null);
+    },
+    [nodes, detailSubNodeInfo, setNodes, recordHistory],
+  );
+
+  const handleUpdateSubFlow = useCallback(
+    (parentId: string, subNodes: Node[], subEdges: Edge[]) => {
+      setNodes((nds) =>
+        nds.map((node) => {
+          if (node.id === parentId) {
+            return {
+              ...node,
+              data: { ...node.data, subNodes, subEdges },
+            };
+          }
+          return node;
+        }),
+      );
+    },
+    [setNodes],
   );
 
   const handleCreateNode = useCallback(
     (type: string, data: any) => {
       recordHistory();
       const theme = NODE_THEMES[type] || NODE_THEMES.process;
+      const newPos = {
+        x: Math.random() * 500 + 150,
+        y: Math.random() * 500 + 150,
+      };
       const newNode: Node = {
         id: nanoid(6),
         type,
-        position: {
-          x: Math.random() * 500 + 150,
-          y: Math.random() * 500 + 150,
-        },
+        position: newPos,
         data: { label: data.label, ...(theme.defaultData || {}), ...data },
       };
+      if (type === "iteration") {
+        newNode.style = { width: 800, height: 600 };
+        newNode.data.subNodes = [
+          {
+            id: "start",
+            type: "start",
+            position: { x: 50, y: 150 },
+            data: { label: "开始", status: "idle" },
+            deletable: false,
+          },
+        ];
+        newNode.data.subEdges = [];
+      }
+
       const newNodes = nodes.concat(newNode);
       setNodes(newNodes);
-      onSave({ nodes: newNodes, edges });
     },
-    [nodes, edges, setNodes, onSave, recordHistory],
+    [nodes, setNodes, recordHistory],
   );
 
   const handleSelectNodeType = useCallback(
@@ -466,13 +617,6 @@ function WorkflowCanvasContent({
     },
     [handleCreateNode],
   );
-
-  const handleSave = useCallback(() => {
-    onSave({
-      nodes: nodes as any as WorkflowNode[],
-      edges: edges as any as WorkflowEdge[],
-    });
-  }, [nodes, edges, onSave]);
 
   const [lastTestInput, setLastTestInput] = useState<string>("");
 
@@ -672,6 +816,7 @@ function WorkflowCanvasContent({
       if (isRemoval) {
         recordHistory();
       }
+
       onNodesChange(changes);
     },
     [onNodesChange, recordHistory],
@@ -689,209 +834,249 @@ function WorkflowCanvasContent({
   );
 
   return (
-    <div className='h-full w-full relative bg-slate-50 dark:bg-slate-950/50'>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChangeWithHistory}
-        onEdgesChange={onEdgesChangeWithHistory}
-        onConnect={onConnect}
-        onNodeClick={onNodeClick}
-        onPaneClick={onPaneClick}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onNodeDragStart={onNodeDragStart}
-        nodeTypes={WorkflowNodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.4, maxZoom: 0.8 }}
-        minZoom={0.2}
-        className='bg-slate-50 dark:bg-slate-950/50'
-        defaultEdgeOptions={{ animated: true }}
-        nodesDraggable={!isLocked}
-        nodesConnectable={!isLocked}
-        elementsSelectable={!isLocked}
-      >
-        {showGrid && (
-          <Background
-            color='#94a3b8'
-            gap={16}
-            size={1}
-            className='opacity-20'
-          />
-        )}
-
-        {showMiniMap && (
-          <MiniMap
-            position='bottom-right'
-            className='!bg-white dark:!bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-lg overflow-hidden'
-            nodeColor={(n) => {
-              const theme =
-                NODE_THEMES[n.type || "process"] || NODE_THEMES.process;
-              return EDGE_COLORS[theme.color] || "#94a3b8";
-            }}
-            maskColor='rgba(148, 163, 184, 0.1)'
-            pannable
-            zoomable
-          />
-        )}
-
-        <Controls
-          showInteractive={false}
-          className='bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-lg !flex !flex-row !gap-0.5 !p-1 !rounded-lg'
-        >
-          <Button
-            variant='ghost'
-            size='icon'
-            className='w-7 h-7'
-            onClick={undo}
-            disabled={history.past.length === 0}
-            title='撤销 (Ctrl+Z)'
-          >
-            <RotateCcw className='w-3.5 h-3.5 text-slate-500' />
-          </Button>
-          <Button
-            variant='ghost'
-            size='icon'
-            className='w-7 h-7'
-            onClick={redo}
-            disabled={history.future.length === 0}
-            title='重做 (Ctrl+Shift+Z)'
-          >
-            <RotateCw className='w-3.5 h-3.5 text-slate-500' />
-          </Button>
-          <div className='w-px h-4 bg-slate-200 dark:bg-slate-700 mx-0.5 my-auto' />
-          <Button
-            variant='ghost'
-            size='icon'
-            className='w-7 h-7'
-            onClick={() => setShowGrid(!showGrid)}
-            title={showGrid ? "隐藏网格" : "显示网格"}
-          >
-            <Grid3X3
-              className={cn(
-                "w-3.5 h-3.5",
-                showGrid ? "text-violet-600" : "text-slate-500",
-              )}
-            />
-          </Button>
-          <Button
-            variant='ghost'
-            size='icon'
-            className='w-7 h-7'
-            onClick={() => setShowMiniMap(!showMiniMap)}
-            title={showMiniMap ? "隐藏缩略图" : "显示缩略图"}
-          >
-            <MapIcon
-              className={cn(
-                "w-3.5 h-3.5",
-                showMiniMap ? "text-violet-600" : "text-slate-500",
-              )}
-            />
-          </Button>
-          <Button
-            variant='ghost'
-            size='icon'
-            className='w-7 h-7'
-            onClick={() => setIsLocked(!isLocked)}
-            title={isLocked ? "解锁画布" : "锁定画布"}
-          >
-            {isLocked ? (
-              <Lock className='w-3.5 h-3.5 text-amber-600' />
-            ) : (
-              <Unlock className='w-3.5 h-3.5 text-slate-500' />
-            )}
-          </Button>
-        </Controls>
-
-        <Panel
-          position='top-left'
-          className='flex gap-2'
-        >
-          <Button
-            onClick={handleTestClick}
-            disabled={isExecuting}
-            className='bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20'
-            size='sm'
-          >
-            {isExecuting ? (
-              <Loader2 className='w-4 h-4 mr-2 animate-spin' />
-            ) : (
-              <Play className='w-4 h-4 mr-2' />
-            )}
-            测试运行
-          </Button>
-          {!testDrawerOpen && testResult && !isExecuting && (
-            <Button
-              onClick={() => setTestDrawerOpen(true)}
-              variant='secondary'
-              size='sm'
-              className='shadow-lg'
-              title='查看上次运行结果'
-            >
-              <Terminal className='w-4 h-4 mr-2' />
-              运行结果
-            </Button>
-          )}
-          <Button
-            onClick={handleSave}
-            className='bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20'
-            size='sm'
-          >
-            <Save className='w-4 h-4 mr-2' />
-            保存工作流
-          </Button>
-          <Button
-            onClick={() => {
-              setAddPanelOpen(!addPanelOpen);
-              setTestDrawerOpen(false);
-              setSelectedNodeId(null);
-            }}
-            variant={addPanelOpen ? "secondary" : "outline"}
-            size='sm'
-            className='shadow-lg'
-          >
-            <Plus className='w-4 h-4 mr-2' />
-            添加节点
-          </Button>
-        </Panel>
-      </ReactFlow>
-
-      <TestRunDrawer
-        isOpen={testDrawerOpen}
-        onClose={() => setTestDrawerOpen(false)}
-        result={testResult}
-        isRunning={isExecuting}
-      />
-
-      {/* Add Node Panel */}
-      <AddNodePanel
-        open={addPanelOpen && !selectedNode}
-        onClose={() => setAddPanelOpen(false)}
-        onSelectNode={handleSelectNodeType}
-      />
-
-      {/* Node Details Panel */}
-      {selectedNode && (
-        <NodeDetailsPanel
-          key={selectedNode.id}
-          node={selectedNode}
+    <SubNodeContext.Provider
+      value={{
+        onSelectSubNode: handleSelectSubNode,
+        onUpdateSubFlow: handleUpdateSubFlow,
+        deselectTrigger,
+      }}
+    >
+      <div className='h-full w-full relative bg-slate-50 dark:bg-slate-950/50'>
+        <ReactFlow
           nodes={nodes}
           edges={edges}
-          onUpdate={handleUpdateNode}
-          onDelete={handleDeleteNode}
-          onClose={() => setSelectedNodeId(null)}
-          allEmployees={allEmployees}
-          lastTestInput={lastTestInput}
-        />
-      )}
+          onNodesChange={onNodesChangeWithHistory}
+          onEdgesChange={onEdgesChangeWithHistory}
+          onConnect={onConnect}
+          onNodeClick={onNodeClick}
+          onEdgeClick={onEdgeClick}
+          onPaneClick={onPaneClick}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onNodeDragStart={onNodeDragStart}
+          nodeTypes={WorkflowNodeTypes}
+          edgeTypes={edgeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.4, maxZoom: 0.8 }}
+          minZoom={0.2}
+          className='bg-slate-50 dark:bg-slate-950/50'
+          defaultEdgeOptions={{
+            animated: true,
+            type: "workflow",
+          }}
+          nodesDraggable={!isLocked}
+          nodesConnectable={!isLocked}
+          elementsSelectable={!isLocked}
+        >
+          {showGrid && (
+            <Background
+              color='#94a3b8'
+              gap={16}
+              size={1}
+              className='opacity-20'
+            />
+          )}
 
-      <TestRunDialog
-        open={testDialogOpen}
-        onOpenChange={setTestDialogOpen}
-        nodes={nodes as any as WorkflowNode[]}
-        onRun={executeWorkflowTest}
-      />
-    </div>
+          {showMiniMap && (
+            <MiniMap
+              position='bottom-right'
+              className='!bg-white dark:!bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-lg overflow-hidden'
+              nodeColor={(n) => {
+                const theme =
+                  NODE_THEMES[n.type || "process"] || NODE_THEMES.process;
+                return EDGE_COLORS[theme.color] || "#94a3b8";
+              }}
+              maskColor='rgba(148, 163, 184, 0.1)'
+              pannable
+              zoomable
+            />
+          )}
+
+          <Controls
+            showInteractive={false}
+            className='bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-lg !flex !flex-row !gap-0.5 !p-1 !rounded-lg'
+          >
+            <Button
+              variant='ghost'
+              size='icon'
+              className='w-7 h-7'
+              onClick={undo}
+              disabled={history.past.length === 0}
+              title='撤销 (Ctrl+Z)'
+            >
+              <RotateCcw className='w-3.5 h-3.5 text-slate-500' />
+            </Button>
+            <Button
+              variant='ghost'
+              size='icon'
+              className='w-7 h-7'
+              onClick={redo}
+              disabled={history.future.length === 0}
+              title='重做 (Ctrl+Shift+Z)'
+            >
+              <RotateCw className='w-3.5 h-3.5 text-slate-500' />
+            </Button>
+            <div className='w-px h-4 bg-slate-200 dark:bg-slate-700 mx-0.5 my-auto' />
+            <Button
+              variant='ghost'
+              size='icon'
+              className='w-7 h-7'
+              onClick={() => setShowGrid(!showGrid)}
+              title={showGrid ? "隐藏网格" : "显示网格"}
+            >
+              <Grid3X3
+                className={cn(
+                  "w-3.5 h-3.5",
+                  showGrid ? "text-violet-600" : "text-slate-500",
+                )}
+              />
+            </Button>
+            <Button
+              variant='ghost'
+              size='icon'
+              className='w-7 h-7'
+              onClick={() => setShowMiniMap(!showMiniMap)}
+              title={showMiniMap ? "隐藏缩略图" : "显示缩略图"}
+            >
+              <MapIcon
+                className={cn(
+                  "w-3.5 h-3.5",
+                  showMiniMap ? "text-violet-600" : "text-slate-500",
+                )}
+              />
+            </Button>
+            <Button
+              variant='ghost'
+              size='icon'
+              className='w-7 h-7'
+              onClick={() => setIsLocked(!isLocked)}
+              title={isLocked ? "解锁画布" : "锁定画布"}
+            >
+              {isLocked ? (
+                <Lock className='w-3.5 h-3.5 text-amber-600' />
+              ) : (
+                <Unlock className='w-3.5 h-3.5 text-slate-500' />
+              )}
+            </Button>
+          </Controls>
+
+          <Panel
+            position='top-left'
+            className='flex gap-2'
+          >
+            <Button
+              onClick={handleTestClick}
+              disabled={isExecuting}
+              className='bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20'
+              size='sm'
+            >
+              {isExecuting ? (
+                <Loader2 className='w-4 h-4 mr-2 animate-spin' />
+              ) : (
+                <Play className='w-4 h-4 mr-2' />
+              )}
+              测试运行
+            </Button>
+            {!testDrawerOpen && testResult && !isExecuting && (
+              <Button
+                onClick={() => setTestDrawerOpen(true)}
+                variant='secondary'
+                size='sm'
+                className='shadow-lg'
+                title='查看上次运行结果'
+              >
+                <Terminal className='w-4 h-4 mr-2' />
+                运行结果
+              </Button>
+            )}
+            <Button
+              onClick={handleSave}
+              disabled={saveStatus === "saving"}
+              variant={saveStatus === "unsaved" ? "secondary" : "ghost"}
+              className={cn(
+                "transition-all duration-300",
+                saveStatus === "unsaved"
+                  ? "bg-amber-50 dark:bg-amber-900/10 text-amber-600 border-amber-200"
+                  : "text-slate-500",
+              )}
+              size='sm'
+            >
+              保存画布
+              {saveStatus === "saving" ? (
+                <Loader2 className='w-4 h-4 ml-2 animate-spin' />
+              ) : saveStatus === "unsaved" ? (
+                <Save className='w-4 h-4 ml-2' />
+              ) : (
+                <Check className='w-4 h-4 ml-2 text-emerald-500' />
+              )}
+            </Button>
+            <Button
+              onClick={() => {
+                setAddPanelOpen(!addPanelOpen);
+                setTestDrawerOpen(false);
+                setSelectedNodeId(null);
+              }}
+              variant={addPanelOpen ? "secondary" : "outline"}
+              size='sm'
+              className='shadow-lg'
+            >
+              <Plus className='w-4 h-4 mr-2' />
+              添加节点
+            </Button>
+          </Panel>
+        </ReactFlow>
+
+        <TestRunDrawer
+          isOpen={testDrawerOpen}
+          onClose={() => setTestDrawerOpen(false)}
+          result={testResult}
+          isRunning={isExecuting}
+        />
+
+        {/* Add Node Panel */}
+        <AddNodePanel
+          open={addPanelOpen && !selectedNode}
+          onClose={() => setAddPanelOpen(false)}
+          onSelectNode={handleSelectNodeType}
+        />
+
+        {/* Node Details Panel */}
+        {selectedNode && (
+          <NodeDetailsPanel
+            key={selectedNode.id}
+            node={selectedNode}
+            nodes={nodes}
+            edges={edges}
+            onUpdate={handleUpdateNode}
+            onDelete={handleDeleteNode}
+            onClose={() => setSelectedNodeId(null)}
+            allEmployees={allEmployees}
+            lastTestInput={lastTestInput}
+          />
+        )}
+
+        {detailSubNodeInfo && (
+          <NodeDetailsPanel
+            key={`sub-${detailSubNodeInfo.node.id}`}
+            node={detailSubNodeInfo.node}
+            nodes={detailSubNodeInfo.subNodes}
+            edges={detailSubNodeInfo.subEdges}
+            onUpdate={handleUpdateSubNode}
+            onDelete={handleDeleteSubNode}
+            onClose={() => setDetailSubNodeInfo(null)}
+            allEmployees={allEmployees}
+            lastTestInput={lastTestInput}
+          />
+        )}
+
+        <TestRunDialog
+          open={testDialogOpen}
+          onOpenChange={setTestDialogOpen}
+          nodes={nodes as any as WorkflowNode[]}
+          onRun={executeWorkflowTest}
+        />
+      </div>
+    </SubNodeContext.Provider>
   );
 }
 

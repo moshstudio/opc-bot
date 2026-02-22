@@ -52,6 +52,8 @@ import {
   getOrCreateCompany,
   deleteCompany,
   updateCompany,
+  getBackgroundSchedulerStatus,
+  setBackgroundSchedulerStatus,
 } from "@/app/actions/company-actions";
 import { toast } from "sonner";
 import { useCallback } from "react";
@@ -65,6 +67,7 @@ export default function SettingsPage() {
   const [brainModelId, setBrainModelId] = useState<string>("");
   const [chatModels, setChatModels] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isBackgroundRunning, setIsBackgroundRunning] = useState(false);
 
   // Email Configuration State
   const [emailConfig, setEmailConfig] = useState({
@@ -95,6 +98,9 @@ export default function SettingsPage() {
       const bId = await getBrainModelId();
       if (bId) setBrainModelId(bId);
 
+      const backgroundStatus = await getBackgroundSchedulerStatus();
+      setIsBackgroundRunning(backgroundStatus);
+
       setLoading(false);
     }
     init();
@@ -112,6 +118,7 @@ export default function SettingsPage() {
           companyId
             ? updateCompany(companyId, { name: companyName })
             : (Promise.resolve({ success: true }) as any),
+          setBackgroundSchedulerStatus(isBackgroundRunning),
         ]);
 
         const allSuccess = results.every((r) => r.success);
@@ -132,7 +139,7 @@ export default function SettingsPage() {
         setIsSaving(false);
       }
     },
-    [emailConfig, brainModelId, companyId, companyName],
+    [emailConfig, brainModelId, companyId, companyName, isBackgroundRunning],
   );
 
   // Auto-save logic
@@ -356,6 +363,28 @@ export default function SettingsPage() {
         <span className='text-sm text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg'>
           开发中
         </span>
+      ),
+    },
+    {
+      icon: Server,
+      label: "后台任务与定时器运行",
+      desc: "开启后，即使切换公司或离线，任务中心的任务及定时触发器也会在后台继续执行；关闭时则暂停无活跃公司时的异步状态。",
+      color: "text-indigo-500",
+      bgColor: "from-indigo-500 to-blue-500",
+      content: (
+        <div className='flex items-center space-x-2'>
+          <Switch
+            id='background-scheduler'
+            checked={isBackgroundRunning}
+            onCheckedChange={setIsBackgroundRunning}
+          />
+          <Label
+            htmlFor='background-scheduler'
+            className='text-xs'
+          >
+            {isBackgroundRunning ? "保持后台运行" : "已关闭"}
+          </Label>
+        </div>
       ),
     },
   ];

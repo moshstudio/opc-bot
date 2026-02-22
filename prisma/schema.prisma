@@ -102,7 +102,7 @@ model Task {
   id           String    @id @default(uuid())
   title        String
   description  String?
-  status       String    @default("PENDING") // PENDING, IN_PROGRESS, REVIEWING, COMPLETED, FAILED
+  status       String    @default("PENDING") // PENDING, IN_PROGRESS, REVIEWING, COMPLETED, FAILED, PAUSED
   assignedToId String?
   assignedTo   Employee? @relation(fields: [assignedToId], references: [id])
   companyId    String
