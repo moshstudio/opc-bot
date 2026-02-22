@@ -123,8 +123,8 @@ export function initScheduler() {
   // 立即同步一次
   syncScheduledWorkflows();
 
-  // 每分钟同步一次数据库中的配置变化（或者根据业务需要调整频率）
-  cron.schedule("* * * * *", () => {
+  // 每5分钟同步一次数据库中的配置变化（或者根据业务需要调整频率）
+  cron.schedule("*/5 * * * *", () => {
     syncScheduledWorkflows();
   });
 }

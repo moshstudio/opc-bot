@@ -121,7 +121,7 @@ export function AddEmployeeDialog({
       onOpenChange={onOpenChange}
     >
       <DialogContent
-        className='sm:max-w-[500px] p-0 overflow-hidden border-0 shadow-2xl rounded-2xl bg-white dark:bg-slate-950'
+        className='sm:max-w-[650px] p-0 overflow-hidden border-0 shadow-2xl rounded-3xl bg-white dark:bg-slate-950 transition-all duration-300'
         closeClassName='text-white hover:bg-white/20 transition-colors'
       >
         <Header color={currentTemplate?.color} />
@@ -130,7 +130,10 @@ export function AddEmployeeDialog({
           <EmptyModelAlert onCancel={() => onOpenChange(false)} />
         ) : (
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)}>
+            <form
+              onSubmit={form.handleSubmit(onSubmit)}
+              className='h-full'
+            >
               <EmployeeForm models={models} />
             </form>
           </Form>

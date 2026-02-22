@@ -2,7 +2,7 @@ import React, { useState, useMemo, memo } from "react";
 import { Node } from "@xyflow/react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { X, Trash2, Save, Zap, Bot } from "lucide-react";
+import { X, Trash2, Save, Bot, Sparkles, Loader2 } from "lucide-react";
 import { useModelContext } from "@/components/ModelContext";
 import { toast } from "sonner";
 import { generateCron } from "@/lib/workflow/cron-utils";
@@ -19,6 +19,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
 
 // Import decomposed node detail components
 import {
@@ -57,6 +58,7 @@ interface NodeDetailsPanelProps {
   onClose: () => void;
   allEmployees: { id: string; name: string; role: string }[];
   lastTestInput?: string;
+  parentNode?: Node;
 }
 
 export const NodeDetailsPanel = memo(
@@ -69,8 +71,67 @@ export const NodeDetailsPanel = memo(
     onClose,
     allEmployees,
     lastTestInput,
+    parentNode: propsParentNode,
   }: NodeDetailsPanelProps) => {
     const { models } = useModelContext();
+    const [isGeneratingLabel, setIsGeneratingLabel] = useState(false);
+    const [labelGenerationError, setLabelGenerationError] = useState<
+      string | null
+    >(null);
+    const [isEditingLabel, setIsEditingLabel] = useState(false);
+
+    const handleGenerateLabel = async (arg?: boolean | React.MouseEvent) => {
+      // Prevent focus-out if this is called via button click
+      if (arg && typeof arg !== "boolean") {
+        arg.stopPropagation();
+      }
+      const silent = typeof arg === "boolean" ? arg : false;
+      if (isGeneratingLabel) return null;
+      if (!silent) {
+        setIsGeneratingLabel(true);
+        setLabelGenerationError(null);
+      }
+
+      try {
+        const response = await fetch("/api/workflow/generate-label", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nodeType: node.type,
+            nodeData: formData,
+          }),
+        });
+
+        const data = await response.json();
+        if (data.label) {
+          handleChange("label", data.label);
+          if (!silent) {
+            toast.success(`自动生成标签: ${data.label}`, {
+              icon: <Sparkles className='w-4 h-4 text-violet-500' />,
+            });
+            setLabelGenerationError(null);
+          }
+          return data.label;
+        } else if (data.error) {
+          if (!silent) {
+            const errorMsg = data.error.includes("未配置")
+              ? "未配置模型"
+              : "生成失败";
+            setLabelGenerationError(errorMsg);
+            toast.error(data.error);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to generate label:", error);
+        if (!silent) {
+          setLabelGenerationError("生成失败");
+          toast.error("生成标签时出错");
+        }
+      } finally {
+        if (!silent) setIsGeneratingLabel(false);
+      }
+      return null;
+    };
 
     // 获取所有上游节点的 ID
     const getUpstreamNodeIds = (
@@ -100,35 +161,103 @@ export const NodeDetailsPanel = memo(
     );
 
     const upstreamVariables = useMemo(() => {
-      return nodes
+      const vars: {
+        label: string;
+        value: string;
+        group: string;
+        type?: string;
+      }[] = [
+        {
+          label: "原始输入 (input)",
+          value: "input",
+          group: "全局变量",
+        },
+      ];
+
+      // 1. Add current node's parent variables (Iteration/Loop context)
+      const actualParentNode =
+        propsParentNode || nodes.find((n) => n.id === node.parentId);
+
+      if (actualParentNode) {
+        if (actualParentNode.type === "iteration") {
+          vars.push({
+            label: "当前项 (item)",
+            value: "input",
+            group: "循环容器",
+          });
+        } else if (actualParentNode.type === "loop") {
+          vars.push({
+            label: "循环索引 (iterationIndex)",
+            value: "iterationIndex",
+            group: "循环容器",
+          });
+          // Add defined loop variables from parent
+          const loopVars = (actualParentNode.data.loopVariables as any[]) || [];
+          loopVars.forEach((v: any) => {
+            vars.push({
+              label: `变量: ${v.name}`,
+              value: `state.${v.name}`,
+              group: "循环局部变量",
+              type: v.type,
+            });
+          });
+        }
+      }
+
+      // 2. Add standard upstream nodes' variables
+      const nodeVars = nodes
         .filter((n) => upstreamNodeIds.includes(n.id))
         .flatMap((n) => {
-          const vars: { label: string; value: string; group: string }[] = [];
-          // 1. Add the node output itself
-          vars.push({
-            label: `节点输出 (Text/JSON)`,
-            value: n.id,
-            group: `${n.data.label || n.type || "Unknown Node"}`,
-          });
+          const itemVars: {
+            label: string;
+            value: string;
+            group: string;
+            type?: string;
+          }[] = [];
 
-          // 2. Parse Output Schema
+          // 1. Add the node output itself
+          let nodeType: string | undefined = undefined;
           if (n.data.outputSchema) {
             try {
-              const schema = JSON.parse(n.data.outputSchema as string);
+              const schema =
+                typeof n.data.outputSchema === "string"
+                  ? JSON.parse(n.data.outputSchema)
+                  : n.data.outputSchema;
+              if (schema.type) nodeType = schema.type;
+            } catch {}
+          }
+
+          itemVars.push({
+            label: `节点输出 (Output)`,
+            value: n.id,
+            group: `${n.data.label || n.type || "Unknown Node"}`,
+            type: nodeType,
+          });
+
+          // 2. Parse Output Schema properties
+          if (n.data.outputSchema) {
+            try {
+              const schema =
+                typeof n.data.outputSchema === "string"
+                  ? JSON.parse(n.data.outputSchema)
+                  : n.data.outputSchema;
               if (schema.properties) {
                 Object.keys(schema.properties).forEach((key) => {
-                  vars.push({
+                  itemVars.push({
                     label: key,
                     value: `${n.id}.${key}`,
                     group: `${n.data.label || n.type || "Unknown Node"}`,
+                    type: schema.properties[key]?.type,
                   });
                 });
               }
             } catch {}
           }
-          return vars;
+          return itemVars;
         });
-    }, [nodes, upstreamNodeIds]);
+
+      return [...vars, ...nodeVars];
+    }, [nodes, upstreamNodeIds, node.parentId, propsParentNode]);
 
     const [formData, setFormData] = useState<any>(() => {
       const data = { ...node.data };
@@ -183,8 +312,18 @@ export const NodeDetailsPanel = memo(
       setFormData((prev: any) => ({ ...prev, [key]: value }));
     };
 
-    const handleSave = () => {
-      onUpdate(node.id, formData);
+    const handleSave = async () => {
+      const finalFormData = { ...formData };
+
+      // 如果未填写 Label，尝试自动生成一个
+      if (!formData.label) {
+        const generated = await handleGenerateLabel(true);
+        if (generated) {
+          finalFormData.label = generated;
+        }
+      }
+
+      onUpdate(node.id, finalFormData);
       toast.success("节点设置已保存");
     };
 
@@ -315,38 +454,116 @@ export const NodeDetailsPanel = memo(
     return (
       <div className='absolute right-0 top-0 bottom-0 w-[480px] bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-2xl z-50 flex flex-col animate-in slide-in-from-right duration-200'>
         {/* Header */}
-        <div className='p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50'>
-          <div className='flex items-center gap-3'>
-            <div
-              className={cn(
-                "w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm",
-                getColorClasses(
-                  NODE_THEMES[node.type || "process"]?.color || "violet",
-                ).topBar,
-              )}
+        <div className='p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-4'>
+          <div className='flex items-center justify-between'>
+            <div className='flex items-center gap-3'>
+              <div
+                className={cn(
+                  "w-8 h-8 rounded-lg flex items-center justify-center text-white shadow-sm",
+                  getColorClasses(
+                    NODE_THEMES[node.type || "process"]?.color || "violet",
+                  ).topBar,
+                )}
+              >
+                {React.createElement(
+                  NODE_THEMES[node.type || "process"]?.icon || Bot,
+                  { size: 16 },
+                )}
+              </div>
+              <div className='overflow-hidden'>
+                <h3 className='font-bold text-slate-900 dark:text-slate-100 text-[10px] uppercase tracking-wider opacity-60'>
+                  {NODE_THEMES[node.type || "process"]?.typeLabel || "节点"}{" "}
+                  设置
+                </h3>
+                <p className='text-[10px] text-slate-400 font-mono truncate'>
+                  {node.id}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant='ghost'
+              size='icon'
+              onClick={onClose}
+              className='w-8 h-8 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 shrink-0'
             >
-              {React.createElement(
-                NODE_THEMES[node.type || "process"]?.icon || Bot,
-                { size: 16 },
-              )}
-            </div>
-            <div className='overflow-hidden'>
-              <h3 className='font-bold text-slate-900 dark:text-slate-100 text-sm truncate'>
-                {String(node?.data?.label || "节点设置")}
-              </h3>
-              <p className='text-[10px] text-slate-400 font-mono truncate'>
-                {node.id}
-              </p>
-            </div>
+              <X size={16} />
+            </Button>
           </div>
-          <Button
-            variant='ghost'
-            size='icon'
-            onClick={onClose}
-            className='w-8 h-8 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 shrink-0'
-          >
-            <X size={16} />
-          </Button>
+
+          {/* Editable Label integrated with AI button - Click to Edit */}
+          <div className='min-h-[32px]'>
+            {isEditingLabel || isGeneratingLabel ? (
+              <div className='relative animate-in fade-in zoom-in-95 duration-200'>
+                <Input
+                  autoFocus
+                  value={formData.label || ""}
+                  onChange={(e) => {
+                    handleChange("label", e.target.value);
+                    if (labelGenerationError) setLabelGenerationError(null);
+                  }}
+                  onBlur={() => !isGeneratingLabel && setIsEditingLabel(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") setIsEditingLabel(false);
+                  }}
+                  placeholder='输入节点标题...'
+                  className='h-8 pl-3 pr-9 text-xs bg-white dark:bg-slate-950 rounded-lg border-violet-200 dark:border-violet-800 focus-visible:ring-violet-500 font-medium shadow-sm'
+                />
+                <Button
+                  variant='ghost'
+                  size='icon'
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleGenerateLabel}
+                  disabled={isGeneratingLabel}
+                  className='absolute right-0 top-0 w-8 h-8 rounded-lg text-violet-600 hover:text-violet-700 hover:bg-violet-50 dark:hover:bg-violet-900/30 transition-all'
+                  title='AI 智能生成标题'
+                >
+                  {isGeneratingLabel ? (
+                    <Loader2 className='w-3 h-3 animate-spin' />
+                  ) : (
+                    <Sparkles className='w-3 h-3' />
+                  )}
+                </Button>
+              </div>
+            ) : (
+              <div
+                onClick={() => setIsEditingLabel(true)}
+                className='group flex items-center justify-between h-8 px-3 py-1.5 rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-800 hover:bg-white dark:hover:bg-slate-950 cursor-text transition-all'
+              >
+                <div className='flex items-center gap-2 overflow-hidden flex-1'>
+                  {isGeneratingLabel ? (
+                    <div className='flex items-center gap-1.5 animate-pulse'>
+                      <Loader2 className='w-3 h-3 animate-spin text-violet-500' />
+                      <span className='text-[11px] text-violet-500 font-medium'>
+                        正在生成...
+                      </span>
+                    </div>
+                  ) : labelGenerationError ? (
+                    <span
+                      className={cn(
+                        "text-[11px] font-medium",
+                        labelGenerationError === "未配置模型"
+                          ? "text-amber-500"
+                          : "text-rose-500",
+                      )}
+                    >
+                      {labelGenerationError}
+                    </span>
+                  ) : formData.label ? (
+                    <span className='text-xs font-semibold text-slate-700 dark:text-slate-200 truncate'>
+                      {formData.label}
+                    </span>
+                  ) : (
+                    <span className='text-[11px] text-slate-400 italic font-normal'>
+                      未命名节点...
+                    </span>
+                  )}
+                </div>
+                <div className='opacity-0 group-hover:opacity-100 transition-opacity flex items-center shrink-0 ml-2'>
+                  <Sparkles className='w-3 h-3 text-violet-400' />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Content */}
@@ -420,80 +637,10 @@ export const NodeDetailsPanel = memo(
             </div>
           ) : null}
 
+          <div className='h-px bg-slate-100 dark:bg-slate-800' />
+
           {/* Dynamic Config Form */}
           <div className='space-y-4'>{renderContent()}</div>
-
-          {/* Variable Helper */}
-          {(node.type === "llm" ||
-            node.type === "process" ||
-            node.type === "text_template" ||
-            node.type === "template_transform" ||
-            node.type === "notification" ||
-            node.type === "variable_assignment") && (
-            <div className='mt-8 pt-6 border-t border-slate-200 dark:border-slate-800 space-y-3'>
-              <div className='flex items-center justify-between'>
-                <Label className='text-xs font-bold text-slate-500 uppercase tracking-widest'>
-                  可用变量引用
-                </Label>
-                <span className='text-[10px] text-slate-400'>
-                  点击 ID 可复制
-                </span>
-              </div>
-              <div className='grid gap-2'>
-                <div
-                  className='flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-xs'
-                  title='用户最开始输入的文字'
-                >
-                  <div className='flex items-center gap-2'>
-                    <div className='w-4 h-4 rounded bg-emerald-500/10 flex items-center justify-center'>
-                      <Zap className='w-3 h-3 text-emerald-600' />
-                    </div>
-                    <span className='font-medium text-slate-600 dark:text-slate-400'>
-                      原始输入
-                    </span>
-                  </div>
-                  <code
-                    className='px-1.5 py-0.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded text-emerald-600 font-mono cursor-pointer hover:bg-emerald-50 transition-colors'
-                    onClick={() => {
-                      navigator.clipboard.writeText("{{input}}");
-                      toast.success("已复制 {{input}}");
-                    }}
-                  >
-                    {"{{input}}"}
-                  </code>
-                </div>
-
-                {nodes
-                  .filter((n: Node) => upstreamNodeIds.includes(n.id))
-                  .map((n: Node) => (
-                    <div
-                      key={n.id}
-                      className='flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-xs'
-                    >
-                      <div className='flex items-center gap-2 overflow-hidden'>
-                        <div className='w-4 h-4 rounded bg-violet-500/10 flex items-center justify-center shrink-0'>
-                          <span className='text-[8px] font-bold text-violet-600 uppercase'>
-                            {(n.type || "N").charAt(0)}
-                          </span>
-                        </div>
-                        <span className='font-medium text-slate-600 dark:text-slate-400 truncate'>
-                          {String(n?.data?.label || n.type)}
-                        </span>
-                      </div>
-                      <code
-                        className='px-1.5 py-0.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded text-violet-600 font-mono cursor-pointer hover:bg-violet-50 transition-colors shrink-0'
-                        onClick={() => {
-                          navigator.clipboard.writeText(`{{${n.id}}}`);
-                          toast.success(`已复制 {{${n.id}}}`);
-                        }}
-                      >
-                        {`{{${n.id.split("-")[0]}...}}`}
-                      </code>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Footer */}

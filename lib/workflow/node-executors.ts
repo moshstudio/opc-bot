@@ -686,6 +686,7 @@ const executors: Record<WorkflowNodeType, NodeExecutor> = {
   condition: conditionExecutor,
   iteration: passthroughExecutor, // TODO
   loop: passthroughExecutor, // TODO
+  exit_loop: passthroughExecutor, // TODO
 
   code: codeExecutor,
   template_transform: textTemplateExecutor,

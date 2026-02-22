@@ -1,6 +1,11 @@
 import { createStep } from "@mastra/core/workflows";
 import { z } from "zod";
-import { extractJsonFromText, extractTextFromResult } from "./utils";
+import {
+  extractJsonFromText,
+  extractTextFromResult,
+  formatStepOutput,
+  stepOutputSchema,
+} from "./utils";
 
 /**
  * Agent 智能体 Step
@@ -65,7 +70,7 @@ export const agentStep = createStep({
     jsonPromptInjection: z.boolean().optional().default(true),
     structuredOutputModel: z.string().optional(),
   }),
-  outputSchema: z.any(),
+  outputSchema: stepOutputSchema,
   execute: async ({ inputData }) => {
     console.log("[Step:agent_process] Executing with input:", {
       agentType: inputData.agentType,
@@ -81,7 +86,8 @@ export const agentStep = createStep({
     // ============================================================
     // 1. 准备输入上下文
     // ============================================================
-    const context = inputData.input?.output ?? inputData.input;
+    // Standardized context (resolved by core engine)
+    const context = inputData.input;
     const contextStr =
       typeof context === "string" ? context : JSON.stringify(context, null, 2);
 
@@ -523,13 +529,12 @@ function buildOutput(
   if (outputSchema) {
     const parsed = extractJsonFromText(textValue);
     if (parsed && typeof parsed === "object") {
-      return {
-        output: parsed,
+      return formatStepOutput(parsed, {
         text: textValue,
         toolCalls,
         strategy,
         iterations: observations?.length,
-      };
+      });
     }
     // 如果需要结构化但解析失败，仍然返回原文（不在此层重试，由外层处理）
     console.warn(
@@ -540,20 +545,18 @@ function buildOutput(
   // 尝试自动解析 JSON
   const parsed = extractJsonFromText(textValue);
   if (parsed && typeof parsed === "object") {
-    return {
-      output: parsed,
+    return formatStepOutput(parsed, {
       text: textValue,
       toolCalls,
       strategy,
       iterations: observations?.length,
-    };
+    });
   }
 
-  return {
-    output: textValue,
+  return formatStepOutput(textValue, {
     text: textValue,
     toolCalls,
     strategy,
     iterations: observations?.length,
-  };
+  });
 }

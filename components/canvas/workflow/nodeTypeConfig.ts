@@ -62,6 +62,8 @@ export interface NodeTheme {
   showSchedule?: boolean;
   /** 默认配置数据 */
   defaultData?: Record<string, any>;
+  /** 默认样式 (如宽高) */
+  defaultStyle?: React.CSSProperties;
 }
 
 /** 模型提供商图标映射 */
@@ -232,7 +234,18 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
       processingMode: "sequential",
       errorHandling: "terminate",
       workflowId: "",
+      subNodes: [
+        {
+          id: "start",
+          type: "start",
+          position: { x: 50, y: 150 },
+          data: { label: "当前项 (item)", status: "idle" },
+          deletable: false,
+        },
+      ],
+      subEdges: [],
     },
+    defaultStyle: { width: 600, height: 450 },
   },
   loop: {
     typeLabel: "循环",
@@ -242,7 +255,33 @@ export const NODE_THEMES: Record<string, NodeTheme> = {
     gradientPair: "cyan",
     tab: "node",
     menuLabel: "循环",
-    menuDesc: "重复执行直到满足条件",
+    menuDesc: "顺序执行直到满足终止条件，支持状态累积",
+    defaultData: {
+      loopVariables: [],
+      loopCondition: "",
+      maxLoops: 10,
+      subNodes: [
+        {
+          id: "start",
+          type: "start",
+          position: { x: 50, y: 150 },
+          data: { label: "循环索引 (index)", status: "idle" },
+          deletable: false,
+        },
+      ],
+      subEdges: [],
+    },
+    defaultStyle: { width: 600, height: 450 },
+  },
+  exit_loop: {
+    typeLabel: "退出循环",
+    defaultLabel: "退出循环",
+    icon: ArrowRightFromLine,
+    color: "rose",
+    gradientPair: "pink",
+    tab: "node",
+    menuLabel: "退出循环",
+    menuDesc: "在满足特定逻辑时立即终止所属循环",
   },
 
   code: {

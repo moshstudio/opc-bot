@@ -1,5 +1,6 @@
 import { createStep } from "@mastra/core/workflows";
 import { z } from "zod";
+import { formatStepOutput, stepOutputSchema } from "./utils";
 
 /**
  * 变量聚合 Step
@@ -13,7 +14,7 @@ export const variableAggregatorStep = createStep({
       .optional()
       .default("concat"),
   }),
-  outputSchema: z.any(),
+  outputSchema: stepOutputSchema,
   execute: async ({ inputData, getStepResult }) => {
     const vars = inputData.aggregateVariables || [];
     const strategy = inputData.aggregateStrategy || "concat";
@@ -52,8 +53,6 @@ export const variableAggregatorStep = createStep({
           .join("\n");
     }
 
-    return {
-      output: finalOutput,
-    };
+    return formatStepOutput(finalOutput);
   },
 });

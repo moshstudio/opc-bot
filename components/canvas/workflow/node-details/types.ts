@@ -4,6 +4,7 @@ export interface UpstreamVariable {
   label: string;
   value: string;
   group: string;
+  type?: string;
 }
 
 export interface NodeDetailContentProps {

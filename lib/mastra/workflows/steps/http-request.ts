@@ -1,5 +1,6 @@
 import { createStep } from "@mastra/core/workflows";
 import { z } from "zod";
+import { formatStepOutput, stepOutputSchema } from "./utils";
 
 /**
  * HTTP 请求 Step
@@ -13,7 +14,7 @@ export const httpRequestStep = createStep({
     body: z.any().optional(),
     companyId: z.string().optional(),
   }),
-  outputSchema: z.any(),
+  outputSchema: stepOutputSchema,
   execute: async ({ inputData }) => {
     console.log(`[Step:http_request] ${inputData.method} ${inputData.url}`);
     const response = await fetch(inputData.url, {
@@ -30,6 +31,6 @@ export const httpRequestStep = createStep({
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${JSON.stringify(data)}`);
     }
-    return { data, status: response.status };
+    return formatStepOutput(data, { data, status: response.status });
   },
 });

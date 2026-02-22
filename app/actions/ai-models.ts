@@ -137,3 +137,55 @@ export async function setBrainModel(modelId: string) {
     return { success: false, error: (error as any).message };
   }
 }
+export async function getLabelGenModelId() {
+  try {
+    const res = await getOrCreateCompany();
+    if (!res.success || !res.company) return null;
+
+    const config = await db.systemConfig.findUnique({
+      where: {
+        companyId_key: {
+          companyId: res.company.id,
+          key: "LABEL_GEN_MODEL_ID",
+        },
+      },
+    });
+
+    return config?.value || null;
+  } catch (error) {
+    console.error("Error fetching label generation model ID:", error);
+    return null;
+  }
+}
+
+export async function setLabelGenModel(modelId: string) {
+  try {
+    const res = await getOrCreateCompany();
+    if (!res.success || !res.company) {
+      throw new Error("Unable to determine active company");
+    }
+
+    await db.systemConfig.upsert({
+      where: {
+        companyId_key: {
+          companyId: res.company.id,
+          key: "LABEL_GEN_MODEL_ID",
+        },
+      },
+      update: {
+        value: modelId,
+      },
+      create: {
+        companyId: res.company.id,
+        key: "LABEL_GEN_MODEL_ID",
+        value: modelId,
+      },
+    });
+
+    revalidatePath("/dashboard/settings");
+    return { success: true };
+  } catch (error) {
+    console.error("Error setting label generation model:", error);
+    return { success: false, error: (error as any).message };
+  }
+}

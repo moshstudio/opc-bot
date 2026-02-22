@@ -13,6 +13,8 @@ import {
   NODE_THEMES,
   getColorClasses,
   MODEL_PROVIDER_ICONS,
+  getVisibleNodesByTab,
+  type NodeTheme,
 } from "./nodeTypeConfig";
 import { getReadableDescription } from "@/lib/workflow/cron-utils";
 import { cn } from "@/lib/utils";
@@ -23,13 +25,26 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle2,
+  MoreHorizontal,
+  RefreshCw,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuPortal,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { useModelContext } from "@/components/ModelContext";
 
 export interface WorkflowNodeData extends Record<string, unknown> {
   label?: string;
-  desc?: string;
   employeeName?: string;
   isUnreachable?: boolean;
   status?: "idle" | "running" | "success" | "error";
@@ -59,7 +74,7 @@ export const BaseNode = ({
   const colors = getColorClasses(theme.color);
   const Icon = theme.icon;
   const [isHovered, setIsHovered] = useState(false);
-  const { deleteElements, getNode, addNodes } = useReactFlow();
+  const { deleteElements, getNode, addNodes, setNodes } = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
 
   useEffect(() => {
@@ -102,6 +117,39 @@ export const BaseNode = ({
     deleteElements({ nodes: [{ id }] });
   };
 
+  const handleChangeType = (newType: string) => {
+    setNodes((nodes) =>
+      nodes.map((node) => {
+        if (node.id === id) {
+          const newTheme = NODE_THEMES[newType];
+          return {
+            ...node,
+            type: newType,
+            style: newTheme.defaultStyle,
+            data: {
+              ...node.data,
+              ...(newTheme.defaultData || {}),
+            },
+          };
+        }
+        return node;
+      }),
+    );
+    // 强制更新节点内部状态（如 Handle 位置）
+    setTimeout(() => updateNodeInternals(id), 50);
+  };
+
+  const availableTypes = useMemo(() => {
+    const types: Record<string, [string, NodeTheme][]> = {};
+    if (isStartType) {
+      types["触发器"] = getVisibleNodesByTab("start");
+    } else {
+      types["基础节点"] = getVisibleNodesByTab("node");
+      types["工具"] = getVisibleNodesByTab("tool");
+    }
+    return types;
+  }, [isStartType]);
+
   return (
     <div
       className='relative group/node'
@@ -132,14 +180,71 @@ export const BaseNode = ({
           <Trash2 className='w-3.5 h-3.5 text-slate-500 group-hover/del:text-rose-500' />
         </Button>
         <div className='w-px h-4 bg-slate-200 dark:bg-slate-800 mx-0.5' />
-        <Button
-          variant='ghost'
-          size='icon'
-          className='w-7 h-7 hover:bg-slate-100 dark:hover:bg-slate-800'
-          title='节点信息'
-        >
-          <Info className='w-3.5 h-3.5 text-slate-500' />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant='ghost'
+              size='icon'
+              className='w-7 h-7 hover:bg-slate-100 dark:hover:bg-slate-800'
+              title='更多操作'
+            >
+              <MoreHorizontal className='w-3.5 h-3.5 text-slate-500' />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align='start'
+            className='w-48'
+          >
+            <DropdownMenuItem className='flex items-center gap-2'>
+              <Info className='w-4 h-4 text-slate-500' />
+              <span>节点信息</span>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className='flex items-center gap-2'>
+                <RefreshCw className='w-4 h-4 text-slate-500' />
+                <span>更改节点</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuPortal>
+                <DropdownMenuSubContent className='w-56 max-h-[400px] overflow-y-auto'>
+                  {Object.entries(availableTypes).map(([group, types]) => (
+                    <div key={group}>
+                      <DropdownMenuLabel className='text-[10px] text-slate-500 uppercase tracking-wider px-2 py-1'>
+                        {group}
+                      </DropdownMenuLabel>
+                      {types.map(([key, theme]: [string, NodeTheme]) => {
+                        const TypeIcon = theme.icon;
+                        return (
+                          <DropdownMenuItem
+                            key={key}
+                            className='flex items-center gap-2'
+                            onClick={() => handleChangeType(key)}
+                            disabled={key === type}
+                          >
+                            <TypeIcon className='w-4 h-4' />
+                            <div className='flex flex-col'>
+                              <span className='text-sm leading-none'>
+                                {theme.typeLabel}
+                              </span>
+                              {theme.menuDesc && (
+                                <span className='text-[10px] text-slate-500 mt-1 whitespace-normal'>
+                                  {theme.menuDesc}
+                                </span>
+                              )}
+                            </div>
+                          </DropdownMenuItem>
+                        );
+                      })}
+                      <DropdownMenuSeparator className='last:hidden' />
+                    </div>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuPortal>
+            </DropdownMenuSub>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </NodeToolbar>
 
       <div
@@ -190,15 +295,9 @@ export const BaseNode = ({
             {(data.label as string) || theme.defaultLabel}
           </div>
 
-          {(data.desc ||
-            (type === "sub_employee" && data.employeeName) ||
+          {((type === "sub_employee" && data.employeeName) ||
             (type === "cron_trigger" && data.cron)) && (
             <div className='flex flex-wrap gap-1.5'>
-              {data.desc && (
-                <div className='text-[10px] text-slate-500 line-clamp-2 w-full'>
-                  {data.desc as string}
-                </div>
-              )}
               {type === "sub_employee" && data.employeeName && (
                 <div className='text-[10px] bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full px-2 py-0.5 flex items-center gap-1 border border-blue-100 dark:border-blue-800'>
                   <span className='w-1 h-1 rounded-full bg-blue-500'></span>

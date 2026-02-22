@@ -119,11 +119,19 @@ export async function getMastraAgent(
     model = openai.chat(finalModelName);
   }
 
+  // 4. Build enriched instructions with context
+  let finalInstructions =
+    instructions || ROLE_PROMPTS[role] || "你是一个得力的 AI 员工。";
+
+  if (companyId) {
+    const contextInfo = `\n\n[CONTEXT]\n当前公司 ID: ${companyId}\n当前员工角色: ${role}\n当你调用工具时，请务必使用上述背景信息，特别是 companyId。`;
+    finalInstructions += contextInfo;
+  }
+
   return new Agent({
     id: `agent-${role}`,
     name: role,
-    instructions:
-      instructions || ROLE_PROMPTS[role] || "你是一个得力的 AI 员工。",
+    instructions: finalInstructions,
     model: model,
     tools: {
       get_employee_logs: tools.logRetrieval,

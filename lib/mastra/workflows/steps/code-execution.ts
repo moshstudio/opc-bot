@@ -1,5 +1,6 @@
 import { createStep } from "@mastra/core/workflows";
 import { z } from "zod";
+import { formatStepOutput, stepOutputSchema } from "./utils";
 import { spawn } from "child_process";
 import fs from "fs/promises";
 import path from "path";
@@ -18,7 +19,7 @@ export const codeStep = createStep({
     variables: z.record(z.string()).optional(),
     companyId: z.string().optional(),
   }),
-  outputSchema: z.any(),
+  outputSchema: stepOutputSchema,
   execute: async ({ inputData }) => {
     const language = inputData.language || "javascript";
     const context = {
@@ -43,7 +44,7 @@ import vm from "node:vm";
  * 安全执行 JavaScript
  * 使用 Node.js VM 模块进行上下文隔离和超时控制
  */
-async function executeJavascript(code: string, context: any) {
+async function executeJavascript(code: string, context: any): Promise<any> {
   try {
     // 1. 创建沙盒上下文
     // 只暴露必要的全局对象，屏蔽 process, require 等危险对象
@@ -89,7 +90,7 @@ async function executeJavascript(code: string, context: any) {
       displayErrors: true,
     });
 
-    return { output: result };
+    return formatStepOutput(result);
   } catch (error: any) {
     console.error("[Step:code_execution] JS Virtual Machine Error:", error);
     throw new Error(`JavaScript execution failed: ${error.message}`);
@@ -97,7 +98,7 @@ async function executeJavascript(code: string, context: any) {
 }
 // ... (executePython definition)
 
-async function executePython(code: string, context: any) {
+async function executePython(code: string, context: any): Promise<any> {
   let tmpFilePath = "";
   try {
     // 1. 构造 Python 包装脚本
@@ -210,7 +211,7 @@ if __name__ == "__main__":
             // 尝试直接解析看看 (fallback)
             try {
               const res = JSON.parse(stdoutData.trim());
-              resolve({ output: res });
+              resolve(formatStepOutput(res));
               return;
             } catch {
               reject(
@@ -226,7 +227,7 @@ if __name__ == "__main__":
             .substring(startIndex + startMarker.length, endIndex)
             .trim();
           const result = JSON.parse(jsonStr);
-          resolve({ output: result });
+          resolve(formatStepOutput(result));
         } catch (error: any) {
           reject(
             new Error(

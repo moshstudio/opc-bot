@@ -16,6 +16,7 @@ export const LlmDetails: React.FC<NodeDetailContentProps> = ({
   formData,
   handleChange,
   models,
+  upstreamVariables,
 }) => {
   return (
     <>
@@ -43,13 +44,42 @@ export const LlmDetails: React.FC<NodeDetailContentProps> = ({
         </Select>
       </div>
       <div className='space-y-2'>
-        <Label>处理指令 (Prompt)</Label>
+        <div className='flex items-center justify-between'>
+          <Label>处理指令 (Prompt)</Label>
+          <Select
+            onValueChange={(v) => {
+              const currentPrompt = formData.prompt || "";
+              handleChange("prompt", currentPrompt + ` {{${v}}}`);
+            }}
+          >
+            <SelectTrigger className='h-7 w-[120px] text-[10px] bg-slate-50 dark:bg-slate-900 border-dashed'>
+              <SelectValue placeholder='插入变量' />
+            </SelectTrigger>
+            <SelectContent>
+              {upstreamVariables.map((v) => (
+                <SelectItem
+                  key={v.value}
+                  value={v.value}
+                >
+                  <span className='text-slate-400 mr-2 text-[9px] lowercase'>
+                    [{v.group}]
+                  </span>
+                  {v.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <Textarea
           value={formData.prompt || ""}
           onChange={(e) => handleChange("prompt", e.target.value)}
           placeholder='描述处理逻辑...'
           className='min-h-[120px]'
         />
+        <p className='text-[10px] text-slate-500 bg-amber-50 dark:bg-amber-950/20 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 leading-relaxed'>
+          💡 <strong>提示：</strong>{" "}
+          您可以使用右上角的下拉框插入变量，或手动输入 {"{{变量名}}"}。
+        </p>
       </div>
       <div className='pt-2 border-t border-slate-100 dark:border-slate-800 mt-4'>
         <SchemaBuilder

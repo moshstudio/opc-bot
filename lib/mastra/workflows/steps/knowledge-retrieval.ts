@@ -1,5 +1,6 @@
 import { createStep } from "@mastra/core/workflows";
 import { z } from "zod";
+import { formatStepOutput, stepOutputSchema } from "./utils";
 
 /**
  * 知识/数据检索 Step
@@ -18,17 +19,16 @@ export const knowledgeRetrievalStep = createStep({
     kbId: z.string().optional(),
     embeddingModel: z.string().optional(),
   }),
-  outputSchema: z.any(),
+  outputSchema: stepOutputSchema,
   execute: async ({ inputData }) => {
     const { queryType = "logs", companyId } = inputData;
 
     if (!companyId) {
       console.warn("[Step:retrieval] Missing companyId, skipping retrieval");
-      return {
-        output: [],
+      return formatStepOutput([], {
         count: 0,
         type: queryType,
-      };
+      });
     }
     const { db } = await import("@/lib/db");
     const { tools } = await import("../../tools");
@@ -139,10 +139,9 @@ export const knowledgeRetrievalStep = createStep({
       }
     }
 
-    return {
-      output: result,
+    return formatStepOutput(result, {
       count: Array.isArray(result) ? result.length : 0,
       type: queryType,
-    };
+    });
   },
 });

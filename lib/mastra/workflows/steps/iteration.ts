@@ -1,5 +1,6 @@
 import { createStep } from "@mastra/core/workflows";
 import { z } from "zod";
+import { formatStepOutput, stepOutputSchema } from "./utils";
 
 export const iterationStep = createStep({
   id: "iteration",
@@ -20,8 +21,12 @@ export const iterationStep = createStep({
     input: z.any().optional(),
     companyId: z.string().optional(),
   }),
-  outputSchema: z.any(),
+  outputSchema: stepOutputSchema,
   execute: async ({ inputData }) => {
+    console.log(
+      "[Mastra:Iteration] execute inputData:",
+      JSON.stringify(inputData, null, 2),
+    );
     try {
       let targetList: any[] = [];
       const iterationVar = inputData.iterationVariable;
@@ -33,30 +38,87 @@ export const iterationStep = createStep({
         } else if (typeof inputData.input === "string") {
           try {
             const parsed = JSON.parse(inputData.input);
-            if (Array.isArray(parsed)) targetList = parsed;
+            if (Array.isArray(parsed)) {
+              targetList = parsed;
+            } else {
+              throw new Error("迭代输入解析后不是数组");
+            }
           } catch {
-            /* ignore */
+            throw new Error("迭代输入必须是数组或 JSON 数组字符串");
           }
+        } else {
+          throw new Error("迭代输入缺失或不是数组");
         }
       } else {
-        // Mock variable resolution for now since utils varies
-        const val = (inputData as any)[iterationVar];
-        if (Array.isArray(val)) {
-          targetList = val;
-        } else if (typeof val === "string") {
-          try {
-            const parsed = JSON.parse(val);
-            if (Array.isArray(parsed)) targetList = parsed;
-          } catch {
-            targetList = val
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean);
+        // If the variable was already resolved by the engine (generalized resolution),
+        // iterationVar might already be the array or object we need.
+        if (Array.isArray(iterationVar)) {
+          targetList = iterationVar;
+        } else if (typeof iterationVar === "string") {
+          // Helper to resolve path within an object
+          const resolve = (obj: any, path: string) => {
+            const parts = path.split(".");
+            let current = obj;
+            for (const part of parts) {
+              if (current && typeof current === "object" && part in current) {
+                current = current[part];
+              } else {
+                return undefined;
+              }
+            }
+            return current;
+          };
+
+          // 1. Try to resolve from inputData top-level (direct key or path)
+          let val =
+            (inputData as any)[iterationVar] ??
+            resolve(inputData, iterationVar);
+
+          // 2. Try to resolve from inputData.input (common in standardized steps)
+          if (!Array.isArray(val) && inputData.input) {
+            const valFromInput =
+              (inputData.input as any)[iterationVar] ??
+              resolve(inputData.input, iterationVar);
+            if (Array.isArray(valFromInput)) {
+              val = valFromInput;
+            }
           }
-        } else if (val !== undefined && val !== null) {
-          targetList = [val];
+
+          // 3. Special case: if iterationVar is "node-XX.field", and current input is from that node
+          if (!Array.isArray(val) && iterationVar.includes(".")) {
+            const parts = iterationVar.split(".");
+            const fieldPath = parts.slice(1).join(".");
+            const valBySuffix = resolve(inputData.input, fieldPath);
+            if (Array.isArray(valBySuffix)) {
+              val = valBySuffix;
+            }
+          }
+
+          if (Array.isArray(val)) {
+            targetList = val;
+          } else {
+            // Try to parse the iterationVar string itself as JSON
+            try {
+              const parsed = JSON.parse(iterationVar);
+              if (Array.isArray(parsed)) {
+                targetList = parsed;
+              } else {
+                throw new Error(`变量 "${iterationVar}" 解析后不是数组`);
+              }
+            } catch {
+              throw new Error(
+                `无法从变量 "${iterationVar}" 获取数组数据，解析值为: ${JSON.stringify(val)}`,
+              );
+            }
+          }
+        } else {
+          throw new Error(
+            `变量 "iterationVariable" 类型错误: ${typeof iterationVar}`,
+          );
         }
       }
+
+      console.log("[Mastra:Iteration] resolved targetList:", targetList);
 
       // 2. Iterate using internal mini-workflow definition
       let finalResults = [...targetList];
@@ -68,18 +130,34 @@ export const iterationStep = createStep({
       let subEdges: any[] = [];
 
       if (def && nodeId) {
-        subNodes = def.nodes.filter((n: any) => n.parentId === nodeId);
-        const subNodeIds = new Set(subNodes.map((n: any) => n.id));
-        subEdges = def.edges.filter(
-          (e: any) => subNodeIds.has(e.source) && subNodeIds.has(e.target),
-        );
-      } else {
-        // Fallback for old data or tests
+        const nestedNodes = def.nodes.filter((n: any) => n.parentId === nodeId);
+        if (nestedNodes.length > 0) {
+          subNodes = nestedNodes;
+          const subNodeIds = new Set(subNodes.map((n: any) => n.id));
+          subEdges = def.edges.filter(
+            (e: any) => subNodeIds.has(e.source) && subNodeIds.has(e.target),
+          );
+          console.log(
+            `[Mastra:Iteration] Found ${subNodes.length} nodes via parentId: ${nodeId}`,
+          );
+        }
+      }
+
+      // Fallback if still empty
+      if (subNodes.length === 0) {
         subNodes = inputData.subNodes || [];
         subEdges = inputData.subEdges || [];
+        if (subNodes.length > 0) {
+          console.log(
+            `[Mastra:Iteration] Found ${subNodes.length} nodes via inputData fallback`,
+          );
+        }
       }
 
       if (subNodes.length > 0) {
+        console.log(
+          `[Mastra:Iteration] Executing sub-workflow with ${subNodes.length} nodes and ${subEdges.length} edges`,
+        );
         const { executeMastraWorkflow } = await import("../index");
 
         const workflowDefinition = {
@@ -104,6 +182,15 @@ export const iterationStep = createStep({
               { companyId: inputData.companyId, modelConfig: {} },
             );
 
+            console.log(
+              `[Mastra:Iteration] Sequential Step ${i} input:`,
+              inputStr,
+            );
+            console.log(
+              `[Mastra:Iteration] Sequential Step ${i} result:`,
+              execRes,
+            );
+
             if (!execRes.success && errorMode === "terminate") {
               throw new Error(`第 ${i} 次迭代执行失败: ` + execRes.error);
             }
@@ -125,6 +212,14 @@ export const iterationStep = createStep({
               inputStr,
               employeeId,
               { companyId: inputData.companyId, modelConfig: {} },
+            );
+            console.log(
+              `[Mastra:Iteration] Parallel Step ${i} input:`,
+              inputStr,
+            );
+            console.log(
+              `[Mastra:Iteration] Parallel Step ${i} result:`,
+              execRes,
             );
             return {
               success: execRes.success,
@@ -157,17 +252,19 @@ export const iterationStep = createStep({
         }
       }
 
-      const resultObj = {
+      return formatStepOutput(finalResults, {
         items: finalResults,
         count: finalResults.length,
         processingMode: inputData.processingMode,
         errorHandling: inputData.errorHandling,
-      };
-
-      return resultObj;
+      });
     } catch (e: any) {
       console.error("[Mastra:Iteration] Error:", e);
-      return { error: e.message, items: [] };
+      return formatStepOutput([], {
+        error: e.message,
+        items: [],
+        success: false,
+      });
     }
   },
 });

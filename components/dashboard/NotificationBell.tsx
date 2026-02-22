@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, memo, useCallback } from "react";
 import useSWR from "swr";
 import {
   Bell,
@@ -39,8 +39,22 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { zhCN } from "date-fns/locale";
 
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { Markdown } from "@/components/ui/markdown";
+
+const getIcon = (type: string) => {
+  switch (type) {
+    case "error":
+      return <XCircle className='w-4 h-4 text-red-500' />;
+    case "warning":
+      return <AlertTriangle className='w-4 h-4 text-amber-500' />;
+    case "success":
+      return <Check className='w-4 h-4 text-emerald-500' />;
+    case "summary":
+      return <Sparkles className='w-4 h-4 text-violet-500' />;
+    default:
+      return <Info className='w-4 h-4 text-blue-500' />;
+  }
+};
 
 export function NotificationBell() {
   const [shouldAnimate, setShouldAnimate] = useState(false);
@@ -51,7 +65,7 @@ export function NotificationBell() {
 
   const [limit, setLimit] = useState(20);
 
-  // 使用 SWR 获取通知，每 60 秒自动更新，且在窗口聚焦时自动刷新
+  // 使用 SWR 获取通知，每 15 秒自动更新（原 3 秒过快），且在窗口聚焦时自动刷新
   const { data, mutate, isLoading, isValidating } = useSWR(
     ["my-notifications", limit],
     async ([, l]: any) => {
@@ -60,7 +74,7 @@ export function NotificationBell() {
       throw new Error(res.error);
     },
     {
-      refreshInterval: 3000,
+      refreshInterval: 15000,
       revalidateOnFocus: true,
       keepPreviousData: true,
     },
@@ -84,58 +98,67 @@ export function NotificationBell() {
     prevCountRef.current = unreadCount;
   }, [unreadCount]);
 
-  const handleRead = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const res = await readNotification(id);
-    if (res.success) {
-      // 乐观更新：在服务器返回前先更新本地数据
-      mutate(
-        {
-          ...data!,
-          unreadCount: Math.max(0, unreadCount - 1),
-          notifications: notifications.map((n) =>
-            n.id === id ? { ...n, isRead: true } : n,
-          ),
-        },
-        false, // 不立即重新请求
-      );
-    }
-  };
+  const handleRead = useCallback(
+    async (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      const res = await readNotification(id);
+      if (res.success) {
+        // 乐观更新：在服务器返回前先更新本地数据
+        mutate(
+          (current: any) => {
+            if (!current) return current;
+            return {
+              ...current,
+              unreadCount: Math.max(0, current.unreadCount - 1),
+              notifications: current.notifications.map((n: any) =>
+                n.id === id ? { ...n, isRead: true } : n,
+              ),
+            };
+          },
+          false, // 不立即重新请求
+        );
+      }
+    },
+    [mutate],
+  );
 
-  const handleReadAll = async () => {
+  const handleReadAll = useCallback(async () => {
     const res = await readAllNotifications();
     if (res.success) {
-      mutate(
-        {
-          ...data!,
+      mutate((current: any) => {
+        if (!current) return current;
+        return {
+          ...current,
           unreadCount: 0,
-          notifications: notifications.map((n) => ({ ...n, isRead: true })),
-        },
-        false,
-      );
+          notifications: current.notifications.map((n: any) => ({
+            ...n,
+            isRead: true,
+          })),
+        };
+      }, false);
       toast.success("已标记所有通知为已读");
     }
-  };
+  }, [mutate]);
 
-  const handleClearAll = async () => {
+  const handleClearAll = useCallback(async () => {
     const res = await clearAllNotifications();
     if (res.success) {
-      mutate(
-        {
-          ...data!,
+      mutate((current: any) => {
+        if (!current) return current;
+        return {
+          ...current,
           unreadCount: 0,
           notifications: [],
           total: 0,
-        },
-        false,
-      );
+        };
+      }, false);
       toast.success("已清空所有通知");
     } else {
       toast.error("清空失败: " + res.error);
     }
-  };
+  }, [mutate]);
 
-  const handleTriggerIvy = async () => {
+  const handleTriggerIvy = useCallback(async () => {
     if (analyzing) return;
     setAnalyzing(true);
     toast.info("艾薇 (Ivy) 正在扫描动态并生成总结...");
@@ -154,42 +177,30 @@ export function NotificationBell() {
       toast.error(`分析失败: ${res.error}`);
     }
     setAnalyzing(false);
-  };
+  }, [analyzing, mutate]);
 
-  const handleNotificationClick = async (n: any) => {
-    setSelectedNotification(n);
-    setDetailOpen(true);
-    if (!n.isRead) {
-      const res = await readNotification(n.id);
-      if (res.success) {
-        mutate(
-          {
-            ...data!,
-            unreadCount: Math.max(0, unreadCount - 1),
-            notifications: notifications.map((item) =>
-              item.id === n.id ? { ...item, isRead: true } : item,
-            ),
-          },
-          false,
-        );
+  const handleNotificationClick = useCallback(
+    async (n: any) => {
+      setSelectedNotification(n);
+      setDetailOpen(true);
+      if (!n.isRead) {
+        const res = await readNotification(n.id);
+        if (res.success) {
+          mutate((current: any) => {
+            if (!current) return current;
+            return {
+              ...current,
+              unreadCount: Math.max(0, current.unreadCount - 1),
+              notifications: current.notifications.map((item: any) =>
+                item.id === n.id ? { ...item, isRead: true } : item,
+              ),
+            };
+          }, false);
+        }
       }
-    }
-  };
-
-  const getIcon = (type: string) => {
-    switch (type) {
-      case "error":
-        return <XCircle className='w-4 h-4 text-red-500' />;
-      case "warning":
-        return <AlertTriangle className='w-4 h-4 text-amber-500' />;
-      case "success":
-        return <Check className='w-4 h-4 text-emerald-500' />;
-      case "summary":
-        return <Sparkles className='w-4 h-4 text-violet-500' />;
-      default:
-        return <Info className='w-4 h-4 text-blue-500' />;
-    }
-  };
+    },
+    [mutate],
+  );
 
   return (
     <>
@@ -232,7 +243,7 @@ export function NotificationBell() {
           <Button
             variant='ghost'
             size='icon'
-            className={`relative h-9 w-9 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all ${shouldAnimate ? "animate-[ring_0.5s_ease-in-out]" : ""}`}
+            className={`relative h-8 w-8 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all ${shouldAnimate ? "animate-[ring_0.5s_ease-in-out]" : ""}`}
           >
             <Bell
               className={`h-[1.1rem] w-[1.1rem] text-slate-600 dark:text-slate-400 ${shouldAnimate ? "text-violet-500" : ""}`}
@@ -313,119 +324,12 @@ export function NotificationBell() {
             ) : (
               <div className='divide-y divide-slate-50 dark:divide-slate-900'>
                 {notifications.map((n: any) => (
-                  <div
+                  <NotificationItem
                     key={n.id}
-                    onClick={() => handleNotificationClick(n)}
-                    className={`p-4 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all group relative cursor-pointer ${!n.isRead ? "bg-violet-50/40 dark:bg-violet-900/10 border-l-[3px] border-violet-500" : "border-l-[3px] border-transparent opacity-70"}`}
-                  >
-                    <div className='flex gap-3'>
-                      {!n.isRead && (
-                        <div className='absolute top-4 right-4'>
-                          <span className='h-2 w-2 rounded-full bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.5)]' />
-                        </div>
-                      )}
-                      <div className='mt-0.5'>{getIcon(n.type)}</div>
-                      <div className='flex-1 space-y-1'>
-                        <div className='flex items-start justify-between gap-2'>
-                          <p
-                            className={`text-xs font-semibold leading-none ${!n.isRead ? "text-slate-900 dark:text-slate-100" : "text-slate-600 dark:text-slate-400"}`}
-                          >
-                            {n.title}
-                          </p>
-                          {!n.isRead && (
-                            <button
-                              onClick={(e) => handleRead(n.id, e)}
-                              className='text-[10px] font-medium text-violet-600 dark:text-violet-400 hover:underline opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1'
-                            >
-                              <Check className='w-3 h-3' />
-                              标记已读
-                            </button>
-                          )}
-                        </div>
-                        {n.isRead ? (
-                          <p className='text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed'>
-                            {n.content}
-                          </p>
-                        ) : (
-                          <div className='text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed'>
-                            <ReactMarkdown
-                              components={{
-                                p: (props: any) => (
-                                  <span
-                                    {...props}
-                                    className='inline'
-                                  />
-                                ),
-                                a: (props: any) => (
-                                  <span
-                                    {...props}
-                                    className='text-violet-500 underline decoration-violet-500/30'
-                                  />
-                                ),
-                                // Simplified rendering for other elements to keep it inline-ish
-                                h1: (props: any) => (
-                                  <span
-                                    {...props}
-                                    className='font-bold'
-                                  />
-                                ),
-                                h2: (props: any) => (
-                                  <span
-                                    {...props}
-                                    className='font-bold'
-                                  />
-                                ),
-                                h3: (props: any) => (
-                                  <span
-                                    {...props}
-                                    className='font-bold'
-                                  />
-                                ),
-                                ul: (props: any) => <span {...props} />,
-                                ol: (props: any) => <span {...props} />,
-                                li: (props: any) => (
-                                  <span
-                                    {...props}
-                                    className='mx-1'
-                                  />
-                                ),
-                                blockquote: (props: any) => (
-                                  <span
-                                    {...props}
-                                    className='italic'
-                                  />
-                                ),
-                                code: (props: any) => (
-                                  <span
-                                    {...props}
-                                    className='bg-slate-100 dark:bg-slate-800 px-1 rounded font-mono'
-                                  />
-                                ),
-                              }}
-                            >
-                              {n.content}
-                            </ReactMarkdown>
-                          </div>
-                        )}
-                        <div className='flex items-center justify-between pt-1'>
-                          <p className='text-[9px] text-slate-400 uppercase tracking-wider'>
-                            {formatDistanceToNow(new Date(n.createdAt), {
-                              addSuffix: true,
-                              locale: zhCN,
-                            })}
-                          </p>
-                          {n.source === "ivy" && (
-                            <Badge
-                              variant='outline'
-                              className='h-4 px-1 text-[8px] border-violet-200 dark:border-violet-800 text-violet-600 dark:text-violet-400 bg-violet-50/50 dark:bg-violet-950/50'
-                            >
-                              艾薇助理
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                    notification={n}
+                    onRead={handleRead}
+                    onClick={handleNotificationClick}
+                  />
                 ))}
                 {notifications.length < total && (
                   <div className='p-2 text-center'>
@@ -464,126 +368,48 @@ export function NotificationBell() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
       >
-        <DialogContent className='max-w-md rounded-2xl'>
-          <DialogHeader>
-            <div className='flex items-center gap-2 mb-2'>
-              {selectedNotification && getIcon(selectedNotification.type)}
-              <DialogTitle className='text-base font-bold'>
-                {selectedNotification?.title}
-              </DialogTitle>
-            </div>
-            <DialogDescription className='text-[11px] text-slate-400'>
-              {selectedNotification &&
-                formatDistanceToNow(new Date(selectedNotification.createdAt), {
-                  addSuffix: true,
-                  locale: zhCN,
-                })}
-            </DialogDescription>
-          </DialogHeader>
-          <div className='py-4'>
-            <div className='bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 overflow-hidden'>
-              <div className='text-sm text-slate-600 dark:text-slate-300 leading-relaxed'>
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    a: (props: any) => (
-                      <a
-                        {...props}
-                        target='_blank'
-                        rel='noopener noreferrer'
-                        className='text-violet-600 dark:text-violet-400 hover:underline break-all'
-                      />
-                    ),
-                    p: ({ ...props }: any) => (
-                      <p
-                        {...props}
-                        className='mb-2 last:mb-0'
-                      />
-                    ),
-                    ul: ({ ...props }: any) => (
-                      <ul
-                        {...props}
-                        className='list-disc list-outside ml-4 mb-2 space-y-1'
-                      />
-                    ),
-                    ol: ({ ...props }: any) => (
-                      <ol
-                        {...props}
-                        className='list-decimal list-outside ml-4 mb-2 space-y-1'
-                      />
-                    ),
-                    li: ({ ...props }: any) => (
-                      <li
-                        {...props}
-                        className='pl-1'
-                      />
-                    ),
-                    h1: ({ ...props }: any) => (
-                      <h1
-                        {...props}
-                        className='text-lg font-bold mb-2 mt-4 first:mt-0 text-slate-900 dark:text-slate-100'
-                      />
-                    ),
-                    h2: ({ ...props }: any) => (
-                      <h2
-                        {...props}
-                        className='text-base font-bold mb-2 mt-3 text-slate-900 dark:text-slate-100'
-                      />
-                    ),
-                    h3: ({ ...props }: any) => (
-                      <h3
-                        {...props}
-                        className='text-sm font-bold mb-1 mt-2 text-slate-900 dark:text-slate-100'
-                      />
-                    ),
-                    blockquote: ({ ...props }: any) => (
-                      <blockquote
-                        {...props}
-                        className='border-l-4 border-slate-200 dark:border-slate-700 pl-4 italic text-slate-500 dark:text-slate-400 my-2'
-                      />
-                    ),
-                    code: ({ className, children, ...props }: any) => {
-                      const match = /language-(\w+)/.exec(className || "");
-                      const isInline = !match && !className;
-                      return isInline ? (
-                        <code
-                          {...props}
-                          className='bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-[0.9em] font-mono text-slate-800 dark:text-slate-200'
-                        >
-                          {children}
-                        </code>
-                      ) : (
-                        <code
-                          {...props}
-                          className='block bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-xs font-mono overflow-x-auto text-slate-800 dark:text-slate-200 my-2'
-                        >
-                          {children}
-                        </code>
-                      );
+        <DialogContent className='max-w-md rounded-2xl max-h-[85vh] p-0 flex flex-col overflow-hidden'>
+          <div className='p-6 pb-2 flex-none'>
+            <DialogHeader>
+              <div className='flex items-center gap-2 mb-1'>
+                {selectedNotification && getIcon(selectedNotification.type)}
+                <DialogTitle className='text-base font-bold line-clamp-1 break-words'>
+                  {selectedNotification?.title}
+                </DialogTitle>
+              </div>
+              <DialogDescription className='text-[11px] text-slate-400'>
+                {selectedNotification &&
+                  formatDistanceToNow(
+                    new Date(selectedNotification.createdAt),
+                    {
+                      addSuffix: true,
+                      locale: zhCN,
                     },
-                    pre: (props: any) => (
-                      <pre
-                        {...props}
-                        className='my-2'
-                      />
-                    ),
-                  }}
-                >
-                  {selectedNotification?.content || ""}
-                </ReactMarkdown>
-              </div>
-            </div>
-            {selectedNotification?.source === "ivy" && (
-              <div className='mt-4 p-3 bg-violet-50/50 dark:bg-violet-900/20 rounded-xl flex items-start gap-3 border border-violet-100 dark:border-violet-800/50'>
-                <Sparkles className='w-4 h-4 text-violet-500 mt-0.5' />
-                <p className='text-[11px] text-violet-600 dark:text-violet-400 font-medium'>
-                  此摘要由 AI 助理 Ivy
-                  根据历史动态生成，帮助您快速掌握业务变化。
-                </p>
-              </div>
-            )}
+                  )}
+              </DialogDescription>
+            </DialogHeader>
           </div>
-          <div className='flex justify-end'>
+
+          <ScrollArea className='flex-1 px-6 overflow-y-auto min-h-0'>
+            <div className='py-4 space-y-4'>
+              <div className='bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 w-full'>
+                <div className='text-sm text-slate-600 dark:text-slate-300 leading-relaxed break-words'>
+                  <Markdown>{selectedNotification?.content || ""}</Markdown>
+                </div>
+              </div>
+              {selectedNotification?.source === "ivy" && (
+                <div className='p-3 bg-violet-50/50 dark:bg-violet-900/20 rounded-xl flex items-start gap-3 border border-violet-100 dark:border-violet-800/50'>
+                  <Sparkles className='w-4 h-4 text-violet-500 mt-0.5 shrink-0' />
+                  <p className='text-[11px] text-violet-600 dark:text-violet-400 font-medium'>
+                    此摘要由 AI 助理 Ivy
+                    根据历史动态生成，帮助您快速掌握业务变化。
+                  </p>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+
+          <div className='p-6 pt-4 flex-none border-t border-slate-100 dark:border-slate-800 flex justify-end'>
             <Button
               className='rounded-xl'
               onClick={() => setDetailOpen(false)}
@@ -596,3 +422,72 @@ export function NotificationBell() {
     </>
   );
 }
+
+const NotificationItem = memo(
+  ({
+    notification: n,
+    onRead,
+    onClick,
+  }: {
+    notification: any;
+    onRead: (id: string, e: React.MouseEvent) => void;
+    onClick: (n: any) => void;
+  }) => {
+    return (
+      <div
+        onClick={() => onClick(n)}
+        className={`p-4 hover:bg-slate-50 dark:hover:bg-slate-900 transition-all group relative cursor-pointer ${!n.isRead ? "bg-violet-50/40 dark:bg-violet-900/10 border-l-[3px] border-violet-500" : "border-l-[3px] border-transparent opacity-70"}`}
+      >
+        <div className='flex gap-3'>
+          {!n.isRead && (
+            <div className='absolute top-4 right-4'>
+              <span className='h-2 w-2 rounded-full bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.5)]' />
+            </div>
+          )}
+          <div className='mt-0.5'>{getIcon(n.type)}</div>
+          <div className='flex-1 space-y-1 min-w-0'>
+            <div className='flex items-start justify-between gap-2'>
+              <p
+                className={`text-xs font-semibold leading-tight line-clamp-1 break-words flex-1 min-w-0 ${!n.isRead ? "text-slate-900 dark:text-slate-100" : "text-slate-600 dark:text-slate-400"}`}
+              >
+                {n.title}
+              </p>
+              {!n.isRead && (
+                <button
+                  onClick={(e) => onRead(n.id, e)}
+                  className='text-[10px] font-medium text-violet-600 dark:text-violet-400 hover:underline opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1'
+                >
+                  <Check className='w-3 h-3' />
+                  标记已读
+                </button>
+              )}
+            </div>
+            <div
+              className={`text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed break-words overflow-hidden ${!n.isRead ? "font-medium" : ""}`}
+            >
+              <Markdown variant='inline'>{n.content}</Markdown>
+            </div>
+            <div className='flex items-center justify-between pt-1'>
+              <p className='text-[9px] text-slate-400 uppercase tracking-wider'>
+                {formatDistanceToNow(new Date(n.createdAt), {
+                  addSuffix: true,
+                  locale: zhCN,
+                })}
+              </p>
+              {n.source === "ivy" && (
+                <Badge
+                  variant='outline'
+                  className='h-4 px-1 text-[8px] border-violet-200 dark:border-violet-800 text-violet-600 dark:text-violet-400 bg-violet-50/50 dark:bg-violet-950/50'
+                >
+                  艾薇助理
+                </Badge>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  },
+);
+
+NotificationItem.displayName = "NotificationItem";

@@ -182,9 +182,9 @@ export const AgentDetails: React.FC<NodeDetailContentProps> = ({
           placeholder='定义 Agent 的角色、目标和上下文...'
           className='min-h-[120px] text-xs rounded-xl bg-white dark:bg-slate-950'
         />
-        <p className='text-[10px] text-slate-400'>
-          使用自然语言描述 Agent 的角色和行为目标，可使用 {"{{node-id}}"}{" "}
-          引用上游变量
+        <p className='text-[10px] text-slate-500 bg-amber-50 dark:bg-amber-950/20 p-2 rounded-lg border border-amber-100 dark:border-amber-900/30 leading-relaxed mt-2'>
+          💡 <strong>提示：</strong>{" "}
+          系统会自动将上游节点的输出作为上下文串联。即使指令中未提及，模型也会参考上一步的结果。
         </p>
       </div>
 

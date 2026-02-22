@@ -34,14 +34,7 @@ import {
   type NodeTheme,
 } from "./nodeTypeConfig";
 import { cn } from "@/lib/utils";
-import {
-  Repeat,
-  Copy,
-  Trash2,
-  Info,
-  MoreHorizontal,
-  RefreshCw,
-} from "lucide-react";
+import { RefreshCw, Copy, Trash2, Info, MoreHorizontal } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -117,7 +110,7 @@ const getEdgeColor = (
   return EDGE_COLORS[theme.color] || "#94a3b8";
 };
 
-const InnerIterationNode = memo(
+const InnerLoopNode = memo(
   ({
     id,
     initialSubNodes,
@@ -138,7 +131,7 @@ const InnerIterationNode = memo(
               id: "start",
               type: "start",
               position: { x: 50, y: 150 },
-              data: { label: "当前项 (item)", status: "idle" },
+              data: { label: "循环索引 (index)", status: "idle" },
               deletable: false,
             },
           ],
@@ -147,7 +140,7 @@ const InnerIterationNode = memo(
       (initialSubEdges || []).map((e: any) => ({ ...e, type: "workflow" })),
     );
 
-    console.log(`[IterationNode:${id}] InnerIterationNode received:`, {
+    console.log(`[LoopNode:${id}] InnerLoopNode received:`, {
       initialSubNodes,
       initialSubEdges,
     });
@@ -182,7 +175,7 @@ const InnerIterationNode = memo(
                     id: "start",
                     type: "start",
                     position: { x: 50, y: 150 },
-                    data: { label: "当前项 (item)", status: "idle" },
+                    data: { label: "循环索引 (index)", status: "idle" },
                     deletable: false,
                   },
                 ];
@@ -281,7 +274,7 @@ const InnerIterationNode = memo(
         });
         return changed ? newNodes : nds;
       });
-    }, [graphStructureKey, nodes, edges, setNodes]); // 移除 nodes 和 edges 依赖，仅靠 graphStructureKey 触发逻辑
+    }, [graphStructureKey, nodes, edges, setNodes]);
 
     useWorkflowSync({
       id,
@@ -370,7 +363,7 @@ const InnerIterationNode = memo(
 
     const handleInteraction = useCallback(
       (...args: any[]) => {
-        // Stop bubbling so outer React Flow doesn't try to drag or select the IterationNode
+        // Stop bubbling so outer React Flow doesn't try to drag or select the LoopNode
         // but allow React Flow internal logic to run
         onInteractionStart?.();
         const e = args[0];
@@ -405,7 +398,7 @@ const InnerIterationNode = memo(
         onMouseDown={handleInteraction}
       >
         <ReactFlow
-          id={`iteration-subflow-${id}`}
+          id={`loop-subflow-${id}`}
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
@@ -436,7 +429,7 @@ const InnerIterationNode = memo(
             type: "workflow",
             style: { strokeWidth: 1.5, stroke: "#94a3b8" },
           }}
-          connectionLineStyle={{ stroke: "#14b8a6", strokeWidth: 2 }}
+          connectionLineStyle={{ stroke: "#06b6d4", strokeWidth: 2 }}
         >
           <Background
             gap={16}
@@ -453,9 +446,9 @@ const InnerIterationNode = memo(
     );
   },
 );
-InnerIterationNode.displayName = "InnerIterationNode";
+InnerLoopNode.displayName = "InnerLoopNode";
 
-const IterationNodeBase = ({ id, data, selected }: NodeProps) => {
+const LoopNodeBase = ({ id, data, selected }: NodeProps) => {
   const {
     deleteElements,
     getNode,
@@ -464,11 +457,9 @@ const IterationNodeBase = ({ id, data, selected }: NodeProps) => {
   } = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
 
-  console.log(`[IterationNode:${id}] Base data:`, data);
+  console.log(`[LoopNode:${id}] Base data:`, data);
 
   // Detect if a connection is starting on the main canvas
-  // When connecting on the main canvas, we want to disable pointer events on the internal sub-canvas
-  // so the outer React Flow doesn't "see" or snap to internal node handles.
   const isOuterConnecting = useStore((s: any) => !!s.connectionStartHandle);
   const outerZoom = useStore((s: any) => s.transform[2]);
 
@@ -485,9 +476,7 @@ const IterationNodeBase = ({ id, data, selected }: NodeProps) => {
     [id, setOuterNodes],
   );
 
-  // Unselects the IterationNode on the main canvas so actions (e.g. Delete) run safely within sub-flow only
   const handleInteractionStart = useCallback(() => {
-    // Only deselect if it's currently selected to avoid unnecessary re-renders
     setOuterNodes((nds) => {
       const node = nds.find((n) => n.id === id);
       if (node?.selected) {
@@ -549,8 +538,8 @@ const IterationNodeBase = ({ id, data, selected }: NodeProps) => {
       className={cn(
         "relative flex flex-col rounded-xl border bg-white dark:bg-slate-900 shadow-sm transition-[box-shadow,ring,border-color] duration-200 group/node",
         selected
-          ? "ring-2 ring-offset-1 border-teal-400"
-          : "hover:shadow-md border-teal-200/60 dark:border-teal-800/40",
+          ? "ring-2 ring-offset-1 border-cyan-400"
+          : "hover:shadow-md border-cyan-200/60 dark:border-cyan-800/40",
       )}
       style={{
         zIndex: selected ? 100 : 0,
@@ -563,18 +552,18 @@ const IterationNodeBase = ({ id, data, selected }: NodeProps) => {
       <Handle
         type='target'
         position={Position.Left}
-        className='w-3 h-3 border-2 border-white dark:border-slate-900 bg-teal-500 shadow-sm !z-50'
+        className='w-3 h-3 border-2 border-white dark:border-slate-900 bg-cyan-500 shadow-sm !z-50'
         style={{ left: -6, top: "50%" }}
       />
       <Handle
         type='source'
         position={Position.Right}
-        className='w-3 h-3 border-2 border-white dark:border-slate-900 bg-teal-500 shadow-sm !z-50'
+        className='w-3 h-3 border-2 border-white dark:border-slate-900 bg-cyan-500 shadow-sm !z-50'
         style={{ right: -6, top: "50%" }}
       />
 
       <NodeResizer
-        color='#14b8a6'
+        color='#06b6d4'
         isVisible={selected}
         minWidth={300}
         minHeight={225}
@@ -645,7 +634,7 @@ const IterationNodeBase = ({ id, data, selected }: NodeProps) => {
                             key={key}
                             className='flex items-center gap-2'
                             onClick={() => handleChangeType(key)}
-                            disabled={key === "iteration"}
+                            disabled={key === "loop"}
                           >
                             <TypeIcon className='w-4 h-4' />
                             <div className='flex flex-col'>
@@ -672,10 +661,10 @@ const IterationNodeBase = ({ id, data, selected }: NodeProps) => {
       </NodeToolbar>
 
       {/* Header occupies fixed height */}
-      <div className='flex-none flex items-center justify-between px-3 py-2 border-b text-xs font-medium text-white rounded-t-xl bg-gradient-to-r from-teal-400 to-emerald-400'>
+      <div className='flex-none flex items-center justify-between px-3 py-2 border-b text-xs font-medium text-white rounded-t-xl bg-gradient-to-r from-cyan-400 to-teal-400'>
         <div className='flex items-center gap-2'>
-          <Repeat className='w-4 h-4' />
-          <span>迭代 (子画布)</span>
+          <RefreshCw className='w-3.5 h-3.5' />
+          <span>循环 (子画布)</span>
         </div>
       </div>
 
@@ -687,7 +676,7 @@ const IterationNodeBase = ({ id, data, selected }: NodeProps) => {
         )}
       >
         <ReactFlowProvider>
-          <InnerIterationNode
+          <InnerLoopNode
             id={id}
             initialSubNodes={data.subNodes || []}
             initialSubEdges={data.subEdges || []}
@@ -701,7 +690,8 @@ const IterationNodeBase = ({ id, data, selected }: NodeProps) => {
   );
 };
 
-export const IterationNode = memo(IterationNodeBase);
+export const LoopNode = memo(LoopNodeBase);
 
-// Handle recursion for nested iteration nodes
-(subNodeTypes as any).iteration = IterationNode;
+// Handle recursion for nested iteration/loop nodes
+(subNodeTypes as any).iteration = (BaseNodeTypes as any).iteration;
+(subNodeTypes as any).loop = LoopNode;

@@ -7,20 +7,38 @@ import { z } from "zod";
  */
 export const logRetrievalTool = createTool({
   id: "get_employee_logs",
-  description: "获取特定公司下未处理的员工工作日志，用于扫描风险和摘要报告。",
+  description:
+    "获取特定公司下员工的工作日志。默认获取未处理日志，用于风险监控和生成摘要报告。",
   inputSchema: z.object({
     input: z.object({
       companyId: z.string().describe("公司 ID"),
       limit: z.number().default(50).describe("返回的最大日志条数"),
+      includeProcessed: z
+        .boolean()
+        .default(false)
+        .describe("是否包含已处理的日志 (用于总结过去的任务)"),
     }),
   }),
   outputSchema: z.any(),
   execute: async ({ input }) => {
     console.log("[Tool:logRetrieval] Executing with input:", input);
-    const { getUnprocessedLogs } = await import("@/lib/services/employee-log");
-    const logs = await getUnprocessedLogs(input.limit);
-    // 过滤公司日志 (假设 getUnprocessedLogs 返回全量，需要在此过滤)
-    return logs.filter((l) => l.employee.companyId === input.companyId);
+    const { db } = await import("@/lib/db");
+
+    const logs = await db.employeeLog.findMany({
+      where: {
+        employee: { companyId: input.companyId },
+        ...(input.includeProcessed ? {} : { isProcessed: false }),
+      },
+      include: {
+        employee: {
+          select: { id: true, name: true, role: true, companyId: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: input.limit,
+    });
+
+    return logs;
   },
 });
 
@@ -34,28 +52,21 @@ export const siteNotificationTool = createTool({
     input: z.object({
       companyId: z.string().describe("公司 ID"),
       title: z.string().describe("通知标题"),
-      content: z.string().describe("通知内容 (Markdown 格式)"),
+      content: z.any().describe("通知内容 (支持字符串、对象或数组)"),
       type: z
         .enum(["info", "warning", "error", "success"])
         .describe("通知类型"),
     }),
   }),
-  execute: async ({
-    input,
-  }: {
-    input: {
-      companyId: string;
-      title: string;
-      content: string;
-      type: "info" | "warning" | "error" | "success";
-    };
-  }) => {
+  execute: async ({ input }: { input: any }) => {
     console.log("[Tool:siteNotification] Executing with input:", input);
     const { createNotification } = await import("@/lib/services/notification");
+    const { renderToMarkdown } = await import("../workflows/steps/utils");
+
     return await createNotification({
       companyId: input.companyId,
       title: input.title,
-      content: input.content,
+      content: renderToMarkdown(input.content),
       type: input.type,
       source: "ivy",
     });
@@ -72,17 +83,15 @@ export const emailNotificationTool = createTool({
     input: z.object({
       companyId: z.string().describe("公司 ID"),
       subject: z.string().describe("邮件主题"),
-      content: z.string().describe("邮件正文 (HTML/Markdown)"),
+      content: z.any().describe("邮件正文 (支持字符串、对象或数组)"),
     }),
   }),
-  execute: async ({
-    input,
-  }: {
-    input: { companyId: string; subject: string; content: string };
-  }) => {
+  execute: async ({ input }: { input: any }) => {
     console.log("[Tool:emailNotification] Executing with input:", input);
     const { sendNotificationEmail, isEmailConfigured } =
       await import("@/lib/services/email");
+    const { renderToMarkdown } = await import("../workflows/steps/utils");
+
     const configured = await isEmailConfigured(input.companyId);
     if (!configured) {
       return {
@@ -90,7 +99,11 @@ export const emailNotificationTool = createTool({
         error: "Email SMTP not configured for this company",
       };
     }
-    await sendNotificationEmail(input.companyId, input.subject, input.content);
+    await sendNotificationEmail(
+      input.companyId,
+      input.subject,
+      renderToMarkdown(input.content),
+    );
     return { success: true };
   },
 });

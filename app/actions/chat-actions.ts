@@ -23,7 +23,12 @@ export async function getChatHistory(employeeId: string) {
 export async function sendMessage(
   employeeId: string,
   message: string,
-  clientModelConfig?: { modelName?: string; baseUrl?: string; apiKey?: string },
+  clientModelConfig?: {
+    modelName?: string;
+    baseUrl?: string;
+    apiKey?: string;
+    provider?: string;
+  },
 ) {
   try {
     // 1. Get Employee details
@@ -86,8 +91,8 @@ export async function sendMessage(
       employee.role || "assistant",
       modelName,
       systemPrompt,
-      undefined,
-      undefined,
+      clientModelConfig,
+      clientModelConfig?.provider,
       employee.companyId,
     );
     const result = await agent.generate(message);
@@ -110,6 +115,18 @@ export async function sendMessage(
     return { success: true, message: aiResponse };
   } catch (error: any) {
     console.error("Chat Error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function clearChatHistory(employeeId: string) {
+  try {
+    await db.message.deleteMany({
+      where: { employeeId },
+    });
+    revalidatePath("/dashboard");
+    return { success: true };
+  } catch (error: any) {
     return { success: false, error: error.message };
   }
 }

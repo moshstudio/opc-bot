@@ -63,14 +63,25 @@ export function ModelProvider({ children }: { children: React.ReactNode }) {
 
   const addModel = async (modelData: Partial<Model>) => {
     const tempId = nanoid();
+    const isNewActiveEmbedding =
+      modelData.category === "embedding" && modelData.isActive;
+
     const newModel = {
       ...modelData,
       id: tempId,
-      isActive: true,
+      isActive: modelData.isActive ?? true,
       category: modelData.category || "chat",
     } as Model;
 
-    setModels((prev) => [...prev, newModel]);
+    setModels((prev) => {
+      let updatedPrev = prev;
+      if (isNewActiveEmbedding) {
+        updatedPrev = prev.map((m) =>
+          m.category === "embedding" ? { ...m, isActive: false } : m,
+        );
+      }
+      return [...updatedPrev, newModel];
+    });
 
     try {
       const saved = await createAiModel(newModel);

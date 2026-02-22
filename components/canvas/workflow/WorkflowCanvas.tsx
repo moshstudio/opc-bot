@@ -44,6 +44,7 @@ import { NODE_THEMES, type NodeTheme } from "./nodeTypeConfig";
 import { Button } from "@/components/ui/button";
 import { Play, Loader2, Save, Plus, Terminal, Check } from "lucide-react";
 import { toast } from "sonner";
+import { useModelContext } from "@/components/ModelContext";
 import {
   WorkflowDefinition,
   WorkflowNode,
@@ -132,6 +133,7 @@ function WorkflowCanvasContent({
   allEmployees,
   currentEmployeeId,
 }: WorkflowCanvasProps) {
+  const { models } = useModelContext();
   const [nodes, setNodes, onNodesChange] = useNodesState(
     (initialWorkflow?.nodes || []) as any[],
   );
@@ -387,34 +389,40 @@ function WorkflowCanvasContent({
 
       const theme = NODE_THEMES[type] || NODE_THEMES.process;
 
+      // --- 自动生成 Label 逻辑 ---
+      const modelNodeTypes = ["llm", "agent", "process", "question_classifier"];
+      let generatedLabel = theme.defaultLabel;
+
+      if (modelNodeTypes.includes(type)) {
+        // 获取该节点的默认模型 ID (从配置中获取)
+        const defaultModelId = theme.defaultData?.model;
+        const modelInfo = models.find((m) => m.id === defaultModelId);
+
+        if (modelInfo) {
+          // 如果配置了模型，自动生成规范化 Label
+          generatedLabel = `${theme.typeLabel} (${modelInfo.name})`;
+        } else {
+          // 如果没设置模型，按用户要求设为空
+          generatedLabel = "";
+        }
+      }
+
       const newNode: Node = {
         id: nanoid(6),
         type,
         position,
+        style: theme.defaultStyle,
         data: {
-          label: theme.defaultLabel,
           status: "idle",
           ...(theme.defaultData || {}),
+          label: generatedLabel,
         },
       };
-      if (type === "iteration") {
-        newNode.style = { width: 800, height: 600 };
-        newNode.data.subNodes = [
-          {
-            id: "start",
-            type: "start",
-            position: { x: 50, y: 150 },
-            data: { label: "开始", status: "idle" },
-            deletable: false,
-          },
-        ];
-        newNode.data.subEdges = [];
-      }
 
       const newNodes = nodes.concat(newNode);
       setNodes(newNodes);
     },
-    [nodes, screenToFlowPosition, setNodes, recordHistory],
+    [nodes, screenToFlowPosition, setNodes, recordHistory, models],
   );
 
   const onConnect = useCallback(
@@ -580,30 +588,38 @@ function WorkflowCanvasContent({
         x: Math.random() * 500 + 150,
         y: Math.random() * 500 + 150,
       };
+
+      // --- 自动生成 Label 的逻辑 ---
+      const modelNodeTypes = ["llm", "agent", "process", "question_classifier"];
+      let generatedLabel = data.label || theme.defaultLabel;
+
+      if (modelNodeTypes.includes(type)) {
+        const defaultModelId = data.model || theme.defaultData?.model;
+        const modelInfo = models.find((m) => m.id === defaultModelId);
+
+        if (modelInfo) {
+          generatedLabel = `${theme.typeLabel} (${modelInfo.name})`;
+        } else if (!data.label) {
+          generatedLabel = "";
+        }
+      }
+
       const newNode: Node = {
         id: nanoid(6),
         type,
         position: newPos,
-        data: { label: data.label, ...(theme.defaultData || {}), ...data },
+        style: theme.defaultStyle,
+        data: {
+          ...theme.defaultData,
+          ...data,
+          label: generatedLabel,
+        },
       };
-      if (type === "iteration") {
-        newNode.style = { width: 800, height: 600 };
-        newNode.data.subNodes = [
-          {
-            id: "start",
-            type: "start",
-            position: { x: 50, y: 150 },
-            data: { label: "开始", status: "idle" },
-            deletable: false,
-          },
-        ];
-        newNode.data.subEdges = [];
-      }
 
       const newNodes = nodes.concat(newNode);
       setNodes(newNodes);
     },
-    [nodes, setNodes, recordHistory],
+    [nodes, setNodes, recordHistory, models],
   );
 
   const handleSelectNodeType = useCallback(
@@ -894,7 +910,7 @@ function WorkflowCanvasContent({
 
           <Controls
             showInteractive={false}
-            className='bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-lg !flex !flex-row !gap-0.5 !p-1 !rounded-lg'
+            className='bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-lg !flex items-center !flex-row !gap-0.5 !p-1 !rounded-lg [&_button]:!border-b-0'
           >
             <Button
               variant='ghost'
@@ -1066,6 +1082,7 @@ function WorkflowCanvasContent({
             onClose={() => setDetailSubNodeInfo(null)}
             allEmployees={allEmployees}
             lastTestInput={lastTestInput}
+            parentNode={nodes.find((n) => n.id === detailSubNodeInfo.parentId)}
           />
         )}
 

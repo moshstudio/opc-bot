@@ -15,7 +15,7 @@ export default function DashboardLayout({
         <AppSidebar />
         <main className='w-full h-screen flex flex-col bg-slate-50/50 dark:bg-slate-950'>
           {/* Top Bar */}
-          <div className='flex items-center justify-between px-6 py-3 border-b border-slate-200/60 dark:border-slate-800/60 bg-white/70 dark:bg-slate-950/70 backdrop-blur-lg'>
+          <div className='flex items-center justify-between px-6 py-1.5 border-b border-slate-200/60 dark:border-slate-800/60 bg-white/70 dark:bg-slate-950/70 backdrop-blur-lg'>
             <div className='flex items-center gap-3'>
               <SidebarTrigger />
               <div className='h-5 w-px bg-slate-200 dark:bg-slate-800' />

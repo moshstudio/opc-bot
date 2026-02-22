@@ -1,5 +1,6 @@
 import { createStep } from "@mastra/core/workflows";
 import { z } from "zod";
+import { formatStepOutput, stepOutputSchema } from "./utils";
 
 /**
  * 条件判断 Step
@@ -27,7 +28,7 @@ export const conditionStep = createStep({
     conditionValue: z.any().optional(),
     expression: z.string().optional(),
   }),
-  outputSchema: z.object({ result: z.boolean() }),
+  outputSchema: stepOutputSchema,
   execute: async ({ inputData, getStepResult }) => {
     try {
       // Helper function to resolve variable value from step results
@@ -102,9 +103,13 @@ export const conditionStep = createStep({
 
         // Reuse the evaluate function defined below or duplicate logic?
         // Let's implement a single evaluator function to use for both.
-        return {
-          result: evaluateCondition(target, type, value, inputData.expression),
-        };
+        const res = evaluateCondition(
+          target,
+          type,
+          value,
+          inputData.expression,
+        );
+        return formatStepOutput(res, { result: res });
       }
 
       // 3. Evaluate new condition list
@@ -117,14 +122,15 @@ export const conditionStep = createStep({
         );
       });
 
-      if (inputData.logicalOperator === "OR") {
-        return { result: results.some((r) => r) };
-      } else {
-        return { result: results.every((r) => r) };
-      }
+      const finalResult =
+        inputData.logicalOperator === "OR"
+          ? results.some((r) => r)
+          : results.every((r) => r);
+
+      return formatStepOutput(finalResult, { result: finalResult });
     } catch (e) {
       console.error("Condition evaluation failed:", e);
-      return { result: false };
+      return formatStepOutput(false, { result: false, success: false });
     }
   },
 });

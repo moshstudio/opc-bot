@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Node, Edge } from "@xyflow/react";
 import {
   WorkflowNode,
@@ -53,19 +53,46 @@ export function useWorkflowSave({
   autoSaveMs = 1000,
 }: UseWorkflowSaveOptions) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
+  // 使用 state 存储上次保存的数据快照，用于渲染期间的同步比较（代替 Ref 访问）
+  const [lastSavedData, setLastSavedData] = useState<string | null>(null);
   const lastSavedRef = useRef<string>("");
-  const isInitialized = useRef(false);
+
+  // 获取工作流的结构化快照
+  const currentData = useMemo(
+    () => getWorkflowStructuralData(nodes, edges),
+    [nodes, edges],
+  );
+
+  // 在渲染期间同步调整状态（Adjusting state during rendering 模式）
+  // 这种模式下 React 会在屏幕更新前立即应用状态，避免 Effect 导致的级联渲染。
+  // 我们使用 lastSavedData 状态而不是 Ref，以保持渲染函数的纯度。
+  if (lastSavedData === null) {
+    setLastSavedData(currentData);
+  } else if (currentData === lastSavedData) {
+    if (saveStatus !== "saved" && saveStatus !== "saving") {
+      setSaveStatus("saved");
+    }
+  } else if (saveStatus === "saved") {
+    setSaveStatus("unsaved");
+  }
+
+  // 保证 lastSavedRef 与 lastSavedData 同步，以维持向后兼容性
+  useEffect(() => {
+    if (lastSavedData !== null) {
+      lastSavedRef.current = lastSavedData;
+    }
+  }, [lastSavedData]);
 
   // 手动保存函数
   const handleSave = useCallback(async () => {
-    const currentData = getWorkflowStructuralData(nodes, edges);
     setSaveStatus("saving");
     try {
       await onSave({
         nodes: nodes as any as WorkflowNode[],
         edges: edges as any as WorkflowEdge[],
       });
-      lastSavedRef.current = currentData;
+      const savedSnapshot = getWorkflowStructuralData(nodes, edges);
+      setLastSavedData(savedSnapshot);
       setSaveStatus("saved");
       toast.success("工作流已手动保存");
     } catch (error) {
@@ -75,42 +102,19 @@ export function useWorkflowSave({
     }
   }, [nodes, edges, onSave]);
 
-  // 自动保存逻辑
+  // 自动保存逻辑：仅处理异步计时器
   useEffect(() => {
-    const currentData = getWorkflowStructuralData(nodes, edges);
+    if (saveStatus !== "unsaved") return;
 
-    // 初始挂载时初始化参考值
-    if (!isInitialized.current) {
-      lastSavedRef.current = currentData;
-      isInitialized.current = true;
-      return;
-    }
-
-    // 如果数据没有真实变化（仅 UI 状态如 selection 变化），则保持 saved 状态
-    if (currentData === lastSavedRef.current) {
-      setSaveStatus((prev) => (prev !== "saved" ? "saved" : prev));
-      return;
-    }
-
-    // 发现变化，立即标记为未保存
-    setSaveStatus("unsaved");
-
-    // 开启防抖计时器执行自动保存
     const timer = setTimeout(async () => {
-      // 再次确认数据是否仍处于变化状态
-      const latestData = getWorkflowStructuralData(nodes, edges);
-      if (latestData === lastSavedRef.current) {
-        setSaveStatus("saved");
-        return;
-      }
-
       setSaveStatus("saving");
       try {
         await onSave({
           nodes: nodes as any as WorkflowNode[],
           edges: edges as any as WorkflowEdge[],
         });
-        lastSavedRef.current = latestData;
+        const savedSnapshot = getWorkflowStructuralData(nodes, edges);
+        setLastSavedData(savedSnapshot);
         setSaveStatus("saved");
       } catch (error) {
         console.error("Auto-save failed:", error);
@@ -119,7 +123,7 @@ export function useWorkflowSave({
     }, autoSaveMs);
 
     return () => clearTimeout(timer);
-  }, [nodes, edges, onSave, autoSaveMs]);
+  }, [saveStatus, currentData, onSave, autoSaveMs, nodes, edges]);
 
   return {
     saveStatus,

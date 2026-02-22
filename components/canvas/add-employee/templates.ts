@@ -27,12 +27,12 @@ export const ROLE_TEMPLATES: Record<
           type: "cron_trigger",
           position: { x: 50, y: 200 },
           data: {
-            label: "定时启动",
+            label: "每小时定时启动",
             scheduleType: "visual",
-            frequency: "daily",
-            time: "09:00",
-            cron: "0 0 9 * * *",
-            cronExpression: "0 0 9 * * *",
+            frequency: "hourly",
+            time: "00:00",
+            cron: "0 0 * * * *",
+            cronExpression: "0 0 * * * *",
           },
         },
         {
@@ -40,9 +40,9 @@ export const ROLE_TEMPLATES: Record<
           type: "knowledge_retrieval",
           position: { x: 350, y: 50 },
           data: {
-            label: "检索员工日志",
+            label: "检索小时日志",
             queryType: "logs",
-            queryTimeRange: "24h",
+            queryTimeRange: "1h",
             queryLimit: 20,
           },
         },
@@ -51,9 +51,9 @@ export const ROLE_TEMPLATES: Record<
           type: "knowledge_retrieval",
           position: { x: 350, y: 200 },
           data: {
-            label: "检索执行结果",
+            label: "检索小时执行结果",
             queryType: "execution_results",
-            queryTimeRange: "24h",
+            queryTimeRange: "1h",
             queryLimit: 10,
           },
         },
@@ -62,9 +62,9 @@ export const ROLE_TEMPLATES: Record<
           type: "knowledge_retrieval",
           position: { x: 350, y: 350 },
           data: {
-            label: "检索系统通知",
+            label: "检索小时系统通知",
             queryType: "notifications",
-            queryTimeRange: "24h",
+            queryTimeRange: "1h",
             queryLimit: 10,
           },
         },
@@ -129,7 +129,7 @@ export const ROLE_TEMPLATES: Record<
           type: "code",
           position: { x: 1550, y: 100 },
           data: {
-            label: "格式化日报",
+            label: "格式化工作总结",
             codeLanguage: "javascript",
             codeContent: `async function main({ summary, items }) {
   const itemList = Array.isArray(items)
@@ -160,9 +160,9 @@ export const ROLE_TEMPLATES: Record<
           type: "notification",
           position: { x: 1850, y: 100 },
           data: {
-            label: "发送日报",
+            label: "发送工作总结",
             notificationType: "both",
-            subject: "艾薇 · 每日工作动态总结",
+            subject: "艾薇 · 实时工作动态总结",
             content: "{{node-format.result}}",
           },
         },
@@ -200,7 +200,7 @@ export const ROLE_TEMPLATES: Record<
           id: "node-start",
           type: "start",
           position: { x: 50, y: 250 },
-          data: { label: "接收消息", desc: "接收用户发送的生活相关消息" },
+          data: { label: "接收消息", },
         },
         {
           id: "node-classifier",
@@ -208,7 +208,7 @@ export const ROLE_TEMPLATES: Record<
           position: { x: 350, y: 250 },
           data: {
             label: "意图分类",
-            desc: "智能分析并分发用户需求",
+            
             categories: [
               {
                 key: "health",
@@ -234,7 +234,7 @@ export const ROLE_TEMPLATES: Record<
           position: { x: 750, y: 50 },
           data: {
             label: "健康顾问",
-            desc: "提供专业的健康生活建议",
+            
             prompt:
               "你是阿尔弗雷德的健康顾问模块。用户的需求概要：{{node-classifier.summary}}，关键词：{{node-classifier.keywords}}，紧急程度：{{node-classifier.urgency}}。\n\n请基于用户的原始消息，提供温暖且专业的健康建议，包括：\n1. 针对性的健康指导（饮食/运动/作息/心理）\n2. 简单可执行的行动建议（不超过3条）\n3. 需要注意的风险提示（如有必要）\n\n用户原始消息：{{__input__}}\n\n请用温暖关怀的语气回复，像一位贴心的老朋友。",
           },
@@ -245,7 +245,7 @@ export const ROLE_TEMPLATES: Record<
           position: { x: 750, y: 250 },
           data: {
             label: "日程管家",
-            desc: "智能日程规划与时间管理",
+            
             prompt:
               "你是阿尔弗雷德的日程管家模块。用户的需求概要：{{node-classifier.summary}}，关键词：{{node-classifier.keywords}}，紧急程度：{{node-classifier.urgency}}。\n\n请基于用户的原始消息，提供高效的日程管理建议，包括：\n1. 时间安排建议或优化方案\n2. 优先级排序建议\n3. 温馨的时间管理小贴士\n\n用户原始消息：{{__input__}}\n\n请用高效又不失温度的语气回复。",
           },
@@ -256,7 +256,7 @@ export const ROLE_TEMPLATES: Record<
           position: { x: 750, y: 450 },
           data: {
             label: "生活百事通",
-            desc: "处理日常琐事与生活咨询",
+            
             prompt:
               "你是阿尔弗雷德的生活百事通模块。用户的需求概要：{{node-classifier.summary}}，关键词：{{node-classifier.keywords}}，紧急程度：{{node-classifier.urgency}}。\n\n请基于用户的原始消息，提供实用的生活建议，包括：\n1. 具体问题的解决方案\n2. 实用的小技巧或推荐\n3. 额外的贴心提示\n\n用户原始消息：{{__input__}}\n\n请用热心且接地气的语气回复，像一位见多识广的好友。",
           },
@@ -267,7 +267,7 @@ export const ROLE_TEMPLATES: Record<
           position: { x: 1100, y: 250 },
           data: {
             label: "温馨格式化",
-            desc: "将回复包装为阿尔弗雷德风格",
+            
             codeLanguage: "javascript",
             codeContent: `async function main({ scene, urgency, advice }) {
   const icons = { health: '💚', schedule: '📅', general: '✨' };
@@ -319,7 +319,7 @@ export const ROLE_TEMPLATES: Record<
           position: { x: 1450, y: 250 },
           data: {
             label: "发送回复",
-            desc: "将阿尔弗雷德的回复发送给用户",
+            
           },
         },
       ],
@@ -379,7 +379,7 @@ export const ROLE_TEMPLATES: Record<
           id: "node-1",
           type: "start",
           position: { x: 100, y: 150 },
-          data: { label: "指令接收", desc: "接收运维相关指令" },
+          data: { label: "指令接收", },
         },
         {
           id: "node-2",
@@ -387,7 +387,7 @@ export const ROLE_TEMPLATES: Record<
           position: { x: 500, y: 150 },
           data: {
             label: "技术风险评估",
-            desc: "分析操作对生产环境的影响",
+            
             prompt: "评估该指令对生产环境的影响及风险等级。",
           },
         },
@@ -397,7 +397,7 @@ export const ROLE_TEMPLATES: Record<
           position: { x: 900, y: 150 },
           data: {
             label: "脚本生成",
-            desc: "自动编写 K8s 部署脚本",
+            
             codeLanguage: "javascript",
             codeContent: `async function main({ riskAssessment }) {
   // 根据风险评估结果生成 K8s 部署脚本
@@ -434,7 +434,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-4",
           type: "output",
           position: { x: 1300, y: 150 },
-          data: { label: "交付脚本", desc: "输出最终的可执行脚本" },
+          data: { label: "交付脚本", },
         },
       ],
       edges: [
@@ -459,7 +459,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-1",
           type: "start",
           position: { x: 100, y: 250 },
-          data: { label: "触发部署", desc: "开始部署流程" },
+          data: { label: "触发部署", },
         },
         {
           id: "node-2",
@@ -467,7 +467,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 500, y: 250 },
           data: {
             label: "环境检查",
-            desc: "判断是否为生产环境",
+            
             conditionType: "contains",
             conditionValue: "PROD",
           },
@@ -478,7 +478,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 900, y: 100 },
           data: {
             label: "高风险警告",
-            desc: "发送环境预警通知",
+            
             notificationType: "site",
             subject: "生产环境部署预警",
             content: "⚠️ 正在向生产环境执行部署操作，请确认！",
@@ -490,7 +490,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 900, y: 400 },
           data: {
             label: "执行部署逻辑",
-            desc: "生成标准部署序列",
+            
             prompt: "生成标准的部署序列指令。",
           },
         },
@@ -498,7 +498,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-5",
           type: "output",
           position: { x: 1300, y: 250 },
-          data: { label: "任务完成", desc: "部署流程执行完毕" },
+          data: { label: "任务完成", },
         },
       ],
       edges: [
@@ -534,7 +534,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-start",
           type: "start",
           position: { x: 50, y: 250 },
-          data: { label: "需求输入", desc: "接收产品相关的需求或问题" },
+          data: { label: "需求输入", },
         },
         {
           id: "node-classifier",
@@ -542,7 +542,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 350, y: 250 },
           data: {
             label: "任务拆解",
-            desc: "智能分发产品任务类型",
+            
             categories: [
               {
                 key: "feature",
@@ -568,7 +568,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 750, y: 50 },
           data: {
             label: "产品策划",
-            desc: "输出专业的功能方案",
+            
             prompt:
               "你是资深产品经理。用户需求：{{node-classifier.summary}}。请输出一份结构化的功能方案，包含：\n1. ✨ 核心价值 (Value Proposition)\n2. 🎯 用户故事 (User Stories)\n3. 🛠 功能详情与逻辑\n4. 🚀 MVP 建议",
           },
@@ -579,7 +579,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 750, y: 250 },
           data: {
             label: "深度分析",
-            desc: "提供市场与竞品洞察",
+            
             prompt:
               "你是资深产品分析师。分析课题：{{node-classifier.summary}}。请提供深度的分析报告，包含：\n1. 📊 关键结论 Summary\n2. 👁 竞品/市场现状分析\n3. 💡 机会点与差异化建议\n4. ⚠️ 潜在风险提醒",
           },
@@ -590,7 +590,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 750, y: 450 },
           data: {
             label: "战略顾问",
-            desc: "制定宏观策略与规划",
+            
             prompt:
               "你是首席产品官 (CPO)。战略议题：{{node-classifier.summary}}。请提供高维度的战略建议，包含：\n1. 💎 商业画布/核心策略分析\n2. 🗺 演进路线图 (Roadmap) 建议\n3. 📈 关键指标 (North Star Metric)\n4. ⚔️ 执行侧重点",
           },
@@ -601,7 +601,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 1100, y: 250 },
           data: {
             label: "方案整合",
-            desc: "生成标准产品文档",
+            
             codeLanguage: "javascript",
             codeContent: `async function main({ type, content }) {
   const titles = { feature: '功能策划案', analysis: '深度分析报告', strategy: '战略规划建议' };
@@ -641,7 +641,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 1450, y: 250 },
           data: {
             label: "输出方案",
-            desc: "展示最终产品方案",
+            
           },
         },
       ],
@@ -706,7 +706,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-1",
           type: "start",
           position: { x: 100, y: 150 },
-          data: { label: "创意触发", desc: "输入主题关键词" },
+          data: { label: "创意触发", },
         },
         {
           id: "node-2",
@@ -714,7 +714,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 500, y: 150 },
           data: {
             label: "素材收集",
-            desc: "自动扩展相关创意素材",
+            
             prompt: "根据输入关键词，联想并整理相关的文案素材和风格建议。",
           },
         },
@@ -724,7 +724,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 900, y: 150 },
           data: {
             label: "文案润色",
-            desc: "生成最终高质量文案",
+            
             prompt: "将素材整合成通顺且具有感染力的最终文案。",
           },
         },
@@ -732,7 +732,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-4",
           type: "output",
           position: { x: 1300, y: 150 },
-          data: { label: "发布内容", desc: "完成创作任务" },
+          data: { label: "发布内容", },
         },
       ],
       edges: [
@@ -757,7 +757,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-1",
           type: "start",
           position: { x: 100, y: 150 },
-          data: { label: "接收需求", desc: "接收全栈开发任务描述" },
+          data: { label: "接收需求", },
         },
         {
           id: "node-2",
@@ -765,7 +765,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 500, y: 150 },
           data: {
             label: "全栈架构设计",
-            desc: "设计前后端方案与数据库",
+            
             prompt:
               "作为全栈工程师，请先分析该需求，并输出前后端架构设计方案、组件拆分及数据库表结构建议。",
           },
@@ -776,7 +776,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 900, y: 150 },
           data: {
             label: "代码生成",
-            desc: "输出前后端最佳实践代码",
+            
             prompt:
               "根据设计方案，使用现代技术栈，编写高质量的前后端代码示例，注意处理异常校验和安全性。",
           },
@@ -785,7 +785,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-4",
           type: "output",
           position: { x: 1300, y: 150 },
-          data: { label: "交付全栈代码", desc: "输出最终全栈代码段" },
+          data: { label: "交付全栈代码", },
         },
       ],
       edges: [
@@ -809,7 +809,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-1",
           type: "start",
           position: { x: 100, y: 150 },
-          data: { label: "接收内容", desc: "输入代码或需求PRD" },
+          data: { label: "接收内容", },
         },
         {
           id: "node-2",
@@ -817,7 +817,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 500, y: 150 },
           data: {
             label: "用例设计",
-            desc: "生成测试点与边界条件",
+            
             prompt:
               "分析输入内容，梳理出需要覆盖的测试点，特别是异常流和边界条件。",
           },
@@ -828,7 +828,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 900, y: 150 },
           data: {
             label: "测试脚本编写",
-            desc: "生成自动化测试代码",
+            
             prompt:
               "为上述测试点编写自动化测试脚本（如 Jest或Playwright 规范代码）。",
           },
@@ -837,7 +837,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-4",
           type: "output",
           position: { x: 1300, y: 150 },
-          data: { label: "交付测试方案", desc: "输出覆盖全面的测试案" },
+          data: { label: "交付测试方案", },
         },
       ],
       edges: [
@@ -865,7 +865,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-1",
           type: "start",
           position: { x: 100, y: 150 },
-          data: { label: "接收素材", desc: "输入产品或主题素材" },
+          data: { label: "接收素材", },
         },
         {
           id: "node-2",
@@ -873,7 +873,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 500, y: 150 },
           data: {
             label: "痛点提取",
-            desc: "提炼核心卖点和用户情绪",
+            
             prompt:
               "分析素材，提炼出能激发用户共鸣的核心痛点、情绪价值和主要卖点。",
           },
@@ -884,7 +884,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 900, y: 150 },
           data: {
             label: "文案生成",
-            desc: "撰写多平台适应文案",
+            
             prompt:
               "基于提炼出的痛点和卖点，生成一篇小红书风格（带Emoji与标签）的爆款文案，和一篇公众号风格的深度软文。",
           },
@@ -893,7 +893,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-4",
           type: "output",
           position: { x: 1300, y: 150 },
-          data: { label: "输出文案", desc: "交付多版本排版好文案" },
+          data: { label: "输出文案", },
         },
       ],
       edges: [
@@ -917,7 +917,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-1",
           type: "start",
           position: { x: 100, y: 150 },
-          data: { label: "输入主题", desc: "提供视频期望主题及时长" },
+          data: { label: "输入主题", },
         },
         {
           id: "node-2",
@@ -925,7 +925,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 500, y: 150 },
           data: {
             label: "创意构思",
-            desc: "生成爆款结构",
+            
             prompt:
               "设计具有吸引力的开头(黄金三秒)、强反转的情节或核心价值输出点。",
           },
@@ -936,7 +936,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 900, y: 150 },
           data: {
             label: "分镜脚本",
-            desc: "输出表格脚本",
+            
             prompt:
               "将创意转化为标准的分镜头脚本（包括画面、景别、台词、音效、时长）。",
           },
@@ -945,7 +945,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-4",
           type: "output",
           position: { x: 1300, y: 150 },
-          data: { label: "输出脚本", desc: "交付可直接拍摄的脚本" },
+          data: { label: "输出脚本", },
         },
       ],
       edges: [
@@ -969,7 +969,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-1",
           type: "start",
           position: { x: 100, y: 150 },
-          data: { label: "现状输入", desc: "输入账号当前数据与困境" },
+          data: { label: "现状输入", },
         },
         {
           id: "node-2",
@@ -977,7 +977,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 500, y: 150 },
           data: {
             label: "赛道分析",
-            desc: "定位对标账号拆解",
+            
             prompt: "分析该垂直领域的爆款逻辑、用户画像以及对标账号的打法。",
           },
         },
@@ -987,7 +987,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 900, y: 150 },
           data: {
             label: "运营规划",
-            desc: "生成起号/涨粉方案",
+            
             prompt: "针对该账号制定一周的选题库规划及具体的涨粉和互动策略。",
           },
         },
@@ -995,7 +995,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-4",
           type: "output",
           position: { x: 1300, y: 150 },
-          data: { label: "输出报告", desc: "交付可落地的运营方案" },
+          data: { label: "输出报告", },
         },
       ],
       edges: [
@@ -1023,7 +1023,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-1",
           type: "start",
           position: { x: 100, y: 150 },
-          data: { label: "接收课题", desc: "输入课程主题和受众标签" },
+          data: { label: "接收课题", },
         },
         {
           id: "node-2",
@@ -1031,7 +1031,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 500, y: 150 },
           data: {
             label: "目标拆解",
-            desc: "设定学习目标",
+            
             prompt: "明确该课程的核心教学目标、知识体系图谱，以及先修要求。",
           },
         },
@@ -1041,7 +1041,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 900, y: 150 },
           data: {
             label: "大纲设计",
-            desc: "生成章节安排",
+            
             prompt:
               "基于学习目标，产出结构清晰、层层递进的课程大纲（细化到每节课重点架构）。",
           },
@@ -1050,7 +1050,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-4",
           type: "output",
           position: { x: 1300, y: 150 },
-          data: { label: "输出大纲", desc: "交付结构化课程大纲" },
+          data: { label: "输出大纲", },
         },
       ],
       edges: [
@@ -1074,7 +1074,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-1",
           type: "start",
           position: { x: 100, y: 150 },
-          data: { label: "输入知识点", desc: "提供需要考察的具体知识" },
+          data: { label: "输入知识点", },
         },
         {
           id: "node-2",
@@ -1082,7 +1082,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 500, y: 150 },
           data: {
             label: "考点梳理",
-            desc: "分析易错点与重难点",
+            
             prompt: "提炼该知识点的常见误区、混淆项和核心考察方向。",
           },
         },
@@ -1092,7 +1092,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 900, y: 150 },
           data: {
             label: "批量制题",
-            desc: "生成阶梯题库",
+            
             prompt:
               "生成包括单选、多选、简答在内的不同难度梯度（基础/进阶/挑战）的测试题，并附带详尽的解析。",
           },
@@ -1101,7 +1101,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-4",
           type: "output",
           position: { x: 1300, y: 150 },
-          data: { label: "输出考卷", desc: "交付高质量评估题" },
+          data: { label: "输出考卷", },
         },
       ],
       edges: [
@@ -1125,7 +1125,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-1",
           type: "start",
           position: { x: 100, y: 150 },
-          data: { label: "接收问题", desc: "输入学生的疑问或错题" },
+          data: { label: "接收问题", },
         },
         {
           id: "node-2",
@@ -1133,7 +1133,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 500, y: 150 },
           data: {
             label: "症结诊断",
-            desc: "找出思维卡点",
+            
             prompt: "分析学生该问题背后缺失的底层知识点或思维逻辑漏洞。",
           },
         },
@@ -1143,7 +1143,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 900, y: 150 },
           data: {
             label: "启发引导",
-            desc: "生成解答对话",
+            
             prompt:
               "使用类比和生动的语言，分步骤地解答问题，最后抛出启发性问题引导学生自主思考。",
           },
@@ -1152,7 +1152,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-4",
           type: "output",
           position: { x: 1300, y: 150 },
-          data: { label: "输出辅导", desc: "给出耐心详尽解答" },
+          data: { label: "输出辅导", },
         },
       ],
       edges: [
@@ -1180,7 +1180,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-1",
           type: "start",
           position: { x: 100, y: 150 },
-          data: { label: "接收指令", desc: "获取任意问题或任务" },
+          data: { label: "接收指令", },
         },
         {
           id: "node-2",
@@ -1188,7 +1188,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 500, y: 150 },
           data: {
             label: "意图解析",
-            desc: "分析任务类型",
+            
             prompt: "分析用户指令的真实意图和需要用到的背景知识体系。",
           },
         },
@@ -1198,7 +1198,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           position: { x: 900, y: 150 },
           data: {
             label: "综合处理",
-            desc: "生成解决方案",
+            
             prompt:
               "结合知识库与逻辑推演，给出兼具专业度与可读性的详尽回答或方案。",
           },
@@ -1207,7 +1207,7 @@ kubectl rollout status deployment/app""".format(assessment=riskAssessment[:50] i
           id: "node-4",
           type: "output",
           position: { x: 1300, y: 150 },
-          data: { label: "输出回复", desc: "快速准确地呈现结果" },
+          data: { label: "输出回复", },
         },
       ],
       edges: [

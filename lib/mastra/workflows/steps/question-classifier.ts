@@ -1,6 +1,11 @@
 import { createStep } from "@mastra/core/workflows";
 import { z } from "zod";
-import { extractJsonFromText, extractTextFromResult } from "./utils";
+import {
+  extractJsonFromText,
+  extractTextFromResult,
+  formatStepOutput,
+  stepOutputSchema,
+} from "./utils";
 
 /**
  * 问题分类 Step
@@ -31,7 +36,7 @@ export const questionClassifierStep = createStep({
       })
       .optional(),
   }),
-  outputSchema: z.any(),
+  outputSchema: stepOutputSchema,
   execute: async ({ inputData }) => {
     const { getMastraAgent } = await import("../../agents");
 
@@ -53,6 +58,11 @@ export const questionClassifierStep = createStep({
         (c) => `- ${c.key}: ${c.label || c.key} (${c.description || "无描述"})`,
       )
       .join("\n");
+
+    const userInput =
+      typeof inputData.input === "string"
+        ? inputData.input
+        : JSON.stringify(inputData.input);
 
     const basePrompt = `
 你是一个智能意图分类助手。
@@ -77,7 +87,7 @@ ${categoryDesc}
   "summary": "一句话摘要"
 }
 
-用户输入：${inputData.input}
+用户输入：${userInput}
     `.trim();
 
     const maxRetries = 3;
@@ -152,26 +162,28 @@ ${categoryDesc}
           }
         }
 
-        return {
+        return formatStepOutput(parsed.category, {
           result: parsed.category,
-          output: parsed,
-        };
+          ...parsed,
+        });
       } catch (error: any) {
         console.error(`[Step:classifier] Attempt ${attempt} error:`, error);
         if (attempt === maxRetries) {
-          return {
+          return formatStepOutput(categories[0]?.key || "error", {
             result: categories[0]?.key || "error",
-            output: { error: error.message },
-          };
+            error: error.message,
+            success: false,
+          });
         }
         await new Promise((r) => setTimeout(r, 1000));
       }
     }
 
     // 不可达，但 TypeScript 需要
-    return {
+    return formatStepOutput(categories[0]?.key || "error", {
       result: categories[0]?.key || "error",
-      output: { error: "Classifier failed to execute (unreachable)" },
-    };
+      error: "Classifier failed to execute (unreachable)",
+      success: false,
+    });
   },
 });

@@ -17,6 +17,7 @@ export type WorkflowNodeType =
   | "condition" // 条件分支
   | "iteration" // 迭代
   | "loop" // 循环
+  | "exit_loop" // 退出循环
   | "code" // 代码执行
   | "template_transform" // 模板转换
   | "variable_aggregator" // 变量聚合器
@@ -121,7 +122,9 @@ export interface WorkflowNodeData {
   processingMode?: "sequential" | "parallel";
   errorHandling?: "terminate" | "continue" | "remove_failed";
   maxIterations?: number;
+  loopVariables?: { name: string; initialValue?: any }[]; // Loop state variables
   loopCondition?: string;
+  maxLoops?: number;
 
   // HTTP 请求节点
   httpMethod?: "GET" | "POST" | "PUT" | "DELETE";

@@ -8,4 +8,7 @@ export * from "./condition";
 export * from "./variable-aggregator";
 export * from "./question-classifier";
 export * from "./iteration";
+export * from "./loop";
+export * from "./exit-loop";
+export * from "./variable-assignment";
 // Utilities are internal and not exported by default, matching original behavior

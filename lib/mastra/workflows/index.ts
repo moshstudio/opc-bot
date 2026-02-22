@@ -23,7 +23,7 @@ export async function executeMastraWorkflow(
   ) => void,
 ): Promise<WorkflowExecutionResult> {
   console.log(
-    `[Mastra] Starting workflow execution for employee: ${employeeId}`,
+    `[Mastra] Starting workflow execution for employee: ${employeeId} (${definition.nodes.length} nodes, ${definition.edges.length} edges)`,
   );
   const startTime = Date.now();
   const companyId = employeeConfig?.companyId || "";
@@ -42,10 +42,12 @@ export async function executeMastraWorkflow(
   const getStepForNode = (node: any) => {
     switch (node.type) {
       case "start":
-      case "cron_trigger":
       case "webhook":
-      case "output":
         return steps.startStep;
+      case "cron_trigger":
+        return steps.cronTriggerStep;
+      case "output":
+        return steps.outputStep;
       case "knowledge_retrieval":
         return steps.knowledgeRetrievalStep;
       case "llm":
@@ -66,6 +68,12 @@ export async function executeMastraWorkflow(
         return steps.variableAggregatorStep;
       case "iteration":
         return steps.iterationStep;
+      case "loop":
+        return steps.loopStep;
+      case "exit_loop":
+        return steps.exitLoopStep;
+      case "variable_assignment":
+        return steps.variableAssignmentStep;
       default:
         console.warn(
           `[Mastra] Unknown node type: ${node.type}, using startStep`,
@@ -96,23 +104,44 @@ export async function executeMastraWorkflow(
 
   // 仅仅从触发器节点开始执行
   const TRIGGER_TYPES = ["start", "cron_trigger", "webhook"];
+
+  // 记录顶层节点（没有 parentId 的节点）
+  const topLevelNodes = definition.nodes.filter((n) => !(n as any).parentId);
+
   let queue = definition.nodes.filter(
     (n) =>
       (inDegree.get(n.id) || 0) === 0 &&
       TRIGGER_TYPES.includes(n.type) &&
-      !(n as any).parentId,
+      (topLevelNodes.length === 0 || !(n as any).parentId),
   );
 
   // 如果没有发现可运行的触发器，但存在节点，则提示错误（支持 DAG 的严格起始点）
-  const topLevelNodes = definition.nodes.filter((n) => !(n as any).parentId);
-  if (queue.length === 0 && topLevelNodes.length > 0) {
-    throw new Error(
-      "工作流缺少开始节点或触发器不可达 (请确保至少有一个触发器且未被依赖)",
+  if (queue.length === 0 && definition.nodes.length > 0) {
+    // 增加详细的错误诊断
+    const inDegreeZeroNodes = definition.nodes.filter(
+      (n) => (inDegree.get(n.id) || 0) === 0,
     );
+    console.error(`[Mastra] No start nodes found. 
+      Total nodes: ${definition.nodes.length}
+      Nodes with 0 in-degree: ${inDegreeZeroNodes.map((n) => `${n.id}(${n.type})`).join(", ")}
+      Trigger types: ${TRIGGER_TYPES.join(", ")}
+    `);
+
+    // 如果没有触发器类型的节点，尝试把任何 0 入度的节点作为起点（兼容旧数据或测试）
+    if (inDegreeZeroNodes.length > 0) {
+      console.warn(
+        `[Mastra] No explicit triggers found, using 0 in-degree nodes as fallback`,
+      );
+      queue = inDegreeZeroNodes;
+    } else {
+      throw new Error(
+        "工作流缺少开始节点或触发器不可达 (请确保至少有一个触发器且未被依赖)",
+      );
+    }
   }
 
   console.log(
-    `[Mastra] Initial layer (Triggers with in-degree 0):`,
+    `[Mastra] Initial layer (Entry points):`,
     queue.map((n) => n.id),
   );
 
@@ -137,6 +166,8 @@ export async function executeMastraWorkflow(
           execute: async (params) => {
             const incomingData = params.inputData || {};
             const configData = node.data || {};
+
+            // 1. Initial merge (raw data)
             const mergedInput = {
               companyId,
               role: employeeConfig?.role,
@@ -149,16 +180,120 @@ export async function executeMastraWorkflow(
               id: node.id,
             };
 
-            if (incomingData.output && !mergedInput.input) {
-              mergedInput.input = incomingData.output;
+            // 2. Resolve 'input' (usually from the immediate upstream output)
+            let resolvedInput = mergedInput.input;
+            if (mergedInput.output && !resolvedInput) {
+              resolvedInput = mergedInput.output;
             }
 
-            // Special handling for Code node: map codeContent to code
-            // Special handling for Code node: map codeContent to code
+            // 3. Try to parse JSON input if it's a string
+            if (typeof resolvedInput === "string") {
+              try {
+                const trimmed = resolvedInput.trim();
+                if (
+                  (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+                  (trimmed.startsWith("[") && trimmed.endsWith("]"))
+                ) {
+                  resolvedInput = JSON.parse(resolvedInput);
+                }
+              } catch {
+                // Ignore, keep as string
+              }
+            }
+            mergedInput.input = resolvedInput;
+
+            // 4. Resolve variables in all string fields
+            for (const key of Object.keys(mergedInput)) {
+              if (typeof mergedInput[key] === "string") {
+                const val = mergedInput[key];
+                // Check for exact match {{key}} to preserve object/array types
+                const exactMatch = val.match(/^\{\{([\w.-]+)\}\}$/);
+                if (exactMatch) {
+                  const fullKey = exactMatch[1];
+                  const parts = fullKey.split(".");
+                  const stepId = parts[0];
+                  const path = parts.slice(1);
+
+                  if (stepId === "input") {
+                    let v = mergedInput.input;
+                    for (const k of path) {
+                      if (v && typeof v === "object" && k in v) {
+                        v = v[k];
+                      } else {
+                        v = undefined;
+                        break;
+                      }
+                    }
+                    if (v !== undefined) mergedInput[key] = v;
+                  } else {
+                    const stepValue = getStepValue(
+                      stepId,
+                      path,
+                      params.getStepResult,
+                    );
+                    if (stepValue !== undefined) mergedInput[key] = stepValue;
+                  }
+                } else {
+                  // Mixed string content (interpolation)
+                  mergedInput[key] = resolveVariables(
+                    val,
+                    params.getStepResult,
+                    mergedInput,
+                  );
+                }
+              } else if (
+                key === "variables" &&
+                typeof mergedInput[key] === "object" &&
+                mergedInput[key] !== null
+              ) {
+                // Special handling for dictionary/map variables (used in Code & other nodes)
+                for (const varKey of Object.keys(mergedInput[key])) {
+                  const val = mergedInput[key][varKey];
+                  if (typeof val === "string") {
+                    const exactMatch = val.match(/^\{\{([\w.-]+)\}\}$/);
+                    if (exactMatch) {
+                      const fullKey = exactMatch[1];
+                      const parts = fullKey.split(".");
+                      const stepId = parts[0];
+                      const path = parts.slice(1);
+
+                      if (stepId === "input") {
+                        let v = mergedInput.input;
+                        for (const k of path) {
+                          if (v && typeof v === "object" && k in v) {
+                            v = v[k];
+                          } else {
+                            v = undefined;
+                            break;
+                          }
+                        }
+                        mergedInput[key][varKey] = v;
+                      } else {
+                        const stepValue = getStepValue(
+                          stepId,
+                          path,
+                          params.getStepResult,
+                        );
+                        if (stepValue !== undefined) {
+                          mergedInput[key][varKey] = stepValue;
+                        }
+                      }
+                    } else {
+                      mergedInput[key][varKey] = resolveVariables(
+                        val,
+                        params.getStepResult,
+                        mergedInput,
+                      );
+                    }
+                  }
+                }
+              }
+            }
+
+            // 5. Node-specific pre-processing
             if (node.type === "code") {
               const language = mergedInput.codeLanguage || "javascript";
               mergedInput.language = language;
-
               if (!mergedInput.code) {
                 if (language === "python" && mergedInput.codeContentPython) {
                   mergedInput.code = mergedInput.codeContentPython;
@@ -168,14 +303,7 @@ export async function executeMastraWorkflow(
               }
             }
 
-            // -------------------------------------------------------------
-            // Conditional Execution Logic
-            // -------------------------------------------------------------
-            // For convergence/merge nodes (multiple incoming edges), we need
-            // to check ALL upstream dependencies. The node should only be
-            // skipped if ALL incoming paths are inactive (skipped or condition
-            // not met). If ANY incoming path is active, proceed execution.
-            // -------------------------------------------------------------
+            // 6. Conditional Execution Logic
             const incomingEdges = definition.edges.filter(
               (e) => e.target === node.id,
             );
@@ -186,8 +314,6 @@ export async function executeMastraWorkflow(
 
               for (const edge of incomingEdges) {
                 const sourceResult = params.getStepResult?.(edge.source);
-
-                // Check conditional handles (for Condition nodes)
                 if (edge.sourceHandle && sourceResult) {
                   const resultVal = (sourceResult as any)?.result;
                   let conditionMet = true;
@@ -196,133 +322,41 @@ export async function executeMastraWorkflow(
                   } else if (edge.sourceHandle === "false") {
                     if (resultVal !== false) conditionMet = false;
                   } else {
-                    // Generic string matching (e.g. for classifiers)
                     if (String(resultVal) !== edge.sourceHandle) {
                       conditionMet = false;
                     }
                   }
-
-                  if (conditionMet) {
-                    hasActiveUpstream = true;
-                  } else {
-                    hasConditionFailure = true;
-                  }
+                  if (conditionMet) hasActiveUpstream = true;
+                  else hasConditionFailure = true;
                   continue;
                 }
-
-                // Check if upstream was skipped
                 if (sourceResult) {
                   const isSkipped =
                     (sourceResult as any).status === "skipped" ||
                     (sourceResult as any)?.output?.status === "skipped";
-                  if (isSkipped) {
-                    // This upstream is skipped, but don't bail yet —
-                    // other upstreams might be active.
-                    continue;
-                  }
-                }
-
-                // If upstream exists and is not skipped, it's active
-                if (sourceResult) {
+                  if (isSkipped) continue;
                   hasActiveUpstream = true;
                 }
               }
 
-              // Only skip if we have NO active upstream at all
               if (
                 !hasActiveUpstream &&
                 (hasConditionFailure || incomingEdges.length > 0)
               ) {
-                // Double-check: if all edges lead to skipped results, skip this node
                 const allSkipped = incomingEdges.every((edge) => {
                   const sr = params.getStepResult?.(edge.source);
                   if (!sr) return false;
                   if ((sr as any).status === "skipped") return true;
                   if ((sr as any)?.output?.status === "skipped") return true;
-                  // Condition handle mismatch
                   if (edge.sourceHandle) {
                     const rv = (sr as any)?.result;
-                    if (edge.sourceHandle === "true") {
-                      if (rv !== true) return true;
-                    } else if (edge.sourceHandle === "false") {
-                      if (rv !== false) return true;
-                    } else {
-                      if (String(rv) !== edge.sourceHandle) return true;
-                    }
+                    if (edge.sourceHandle === "true") return rv !== true;
+                    if (edge.sourceHandle === "false") return rv !== false;
+                    return String(rv) !== edge.sourceHandle;
                   }
                   return false;
                 });
-
-                if (allSkipped) {
-                  console.log(
-                    `[Mastra] Skipping step ${node.id} because all upstream dependencies are inactive.`,
-                  );
-                  return { status: "skipped" };
-                }
-              }
-            }
-            // -------------------------------------------------------------
-
-            // Resolve variables in string inputs and 'variables' object
-            // We use a helper to look up {{nodeId}} references using getStepResult
-            for (const key of Object.keys(mergedInput)) {
-              if (typeof mergedInput[key] === "string") {
-                mergedInput[key] = resolveVariables(
-                  mergedInput[key],
-                  params.getStepResult,
-                  mergedInput,
-                );
-              } else if (
-                key === "variables" &&
-                typeof mergedInput[key] === "object" &&
-                mergedInput[key] !== null
-              ) {
-                // Special handling for 'variables' map in code node
-                for (const varKey of Object.keys(mergedInput[key])) {
-                  const val = mergedInput[key][varKey];
-                  if (typeof val === "string") {
-                    // Check for exact match {{key}} to preserve object type
-                    const exactMatch = val.match(/^\{\{([\w.-]+)\}\}$/);
-                    if (exactMatch) {
-                      const fullKey = exactMatch[1]; // e.g. "step1.field"
-                      if (fullKey === "input") {
-                        mergedInput[key][varKey] = mergedInput.input;
-                      } else {
-                        // resolve value using our helper logic (stepId + path)
-                        const parts = fullKey.split(".");
-                        const stepId = parts[0];
-                        const path = parts.slice(1);
-
-                        // We can reuse resolveVariables's string resolver if we want string output,
-                        // but here we want to preserve objects/numbers/booleans if possible.
-                        const stepValue = getStepValue(
-                          stepId,
-                          path,
-                          params.getStepResult,
-                        );
-
-                        if (stepValue !== undefined) {
-                          mergedInput[key][varKey] = stepValue;
-                        } else {
-                          // Fallback to string interpolation if direct resolution failed
-                          // (e.g. maybe it was just a string that looked like a variable but wasn't valid)
-                          mergedInput[key][varKey] = resolveVariables(
-                            val,
-                            params.getStepResult,
-                            mergedInput,
-                          );
-                        }
-                      }
-                    } else {
-                      // Mixed string content
-                      mergedInput[key][varKey] = resolveVariables(
-                        val,
-                        params.getStepResult,
-                        mergedInput,
-                      );
-                    }
-                  }
-                }
+                if (allSkipped) return { status: "skipped" };
               }
             }
 
@@ -441,9 +475,14 @@ export async function executeMastraWorkflow(
       .filter((r) => r !== null) as NodeExecutionResult[];
 
     if (result.status === "success") {
+      let finalVal = result.result;
+      // 自动解构统一格式的输出，直接提取 output 字段作为 finalOutput
+      if (finalVal && typeof finalVal === "object" && "output" in finalVal) {
+        finalVal = finalVal.output;
+      }
       return {
         success: true,
-        finalOutput: result.result,
+        finalOutput: finalVal,
         nodeResults,
         totalDuration: Date.now() - startTime,
       };
@@ -534,8 +573,21 @@ function resolveVariables(
 ): string {
   if (!content) return content;
   return content.replace(/\{\{([\w.-]+)\}\}/g, (match, key) => {
-    if (key === "input") {
-      const val = contextData.input;
+    if (key === "input" || key.startsWith("input.")) {
+      const parts = key.split(".");
+      let val = contextData.input;
+      const path = parts.slice(1);
+
+      for (const k of path) {
+        if (val && typeof val === "object" && k in val) {
+          val = val[k];
+        } else {
+          val = undefined;
+          break;
+        }
+      }
+
+      if (val === undefined || val === null) return "";
       return typeof val === "string" ? val : JSON.stringify(val);
     }
 
